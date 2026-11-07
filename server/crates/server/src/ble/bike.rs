@@ -56,7 +56,16 @@ async fn run(hub: &BikeHub) -> Result<(), BoxError> {
     let mut announced = false;
     loop {
         for adapter in manager.adapters().await? {
-            adapter.start_scan(ScanFilter::default()).await?;
+            if let Err(error) = adapter.start_scan(ScanFilter::default()).await {
+                // The scan by design spans several loop cycles: BlueZ keeps its
+                // discovery running, so every later start answers "already in
+                // progress". Treating it as a failure killed each cycle before
+                // the bike was even looked for.
+                if !scan_in_progress(&error) {
+                    return Err(error.into());
+                }
+                tracing::debug!("the scan is already running, kept");
+            }
         }
         tokio::time::sleep(SCAN_PAUSE).await;
         for adapter in manager.adapters().await? {
@@ -77,11 +86,35 @@ async fn run(hub: &BikeHub) -> Result<(), BoxError> {
                 }
                 match session(hub, &peripheral).await {
                     Ok(()) => tracing::info!("bike link closed, scanning again"),
-                    Err(error) => tracing::warn!("bike link: {error}"),
+                    Err(error) => {
+                        tracing::warn!("bike link: {error}");
+                        // The pause is part of the reconnect contract, not only
+                        // of fatal setup errors: a failing handshake retried at
+                        // scan speed just hammers the bike's firmware.
+                        tokio::time::sleep(RECONNECT_PAUSE).await;
+                    }
                 }
             }
         }
     }
+}
+
+/// True when the platform rejected a scan start because it is already scanning.
+/// BlueZ answers `org.bluez.Error.InProgress` ("Operation already in progress");
+/// the ongoing scan is exactly the one we asked for, so the retry keeps it.
+fn scan_in_progress(error: &btleplug::Error) -> bool {
+    error.to_string().to_lowercase().contains("already in progress")
+}
+
+/// Names a GATT step in its error, so a failing handshake says where it died.
+async fn named_step<T>(
+    what: &'static str,
+    op: impl std::future::Future<Output = btleplug::Result<T>>,
+) -> Result<T, BoxError> {
+    tokio::time::timeout(STEP_TIMEOUT, op)
+        .await
+        .map_err(|_| -> BoxError { format!("{what}: no answer within {} s", STEP_TIMEOUT.as_secs()).into() })?
+        .map_err(|error| format!("{what}: {error}").into())
 }
 
 /// One connect–handshake–stream cycle; returns when the bike is lost.
@@ -89,24 +122,29 @@ async fn session(hub: &BikeHub, peripheral: &btleplug::platform::Peripheral) -> 
     use btleplug::api::{Characteristic, Peripheral as _, WriteType};
     use futures_util::StreamExt;
 
-    if !peripheral.is_connected().await? {
-        tokio::time::timeout(STEP_TIMEOUT, peripheral.connect()).await??;
+    if !peripheral.is_connected().await.map_err(|e| -> BoxError { e.into() })? {
+        named_step("connecting GATT", peripheral.connect()).await?;
     }
-    tokio::time::timeout(STEP_TIMEOUT, peripheral.discover_services()).await??;
+    named_step("discovering services", peripheral.discover_services()).await?;
     if !peripheral.services().iter().any(|service| service.uuid == SERVICE_UUID) {
         return Err("the device does not expose the Yesoul service (0xFFF0)".into());
     }
-    let find =
-        |uuid| -> Option<Characteristic> { peripheral.characteristics().iter().find(|c| c.uuid == uuid).cloned() };
-    let init = find(INIT_UUID).ok_or("no init characteristic (0xFFF1)")?;
-    let notify = find(NOTIFY_UUID).ok_or("no notify characteristic (0xFFF4)")?;
-    // Order matters: init with write response, only then subscribe.
-    tokio::time::timeout(
-        STEP_TIMEOUT,
-        peripheral.write(&init, &INIT_PACKET, WriteType::WithResponse),
+    let find = |uuid: &uuid::Uuid| -> Option<Characteristic> {
+        peripheral.characteristics().iter().find(|c| c.uuid == *uuid).cloned()
+    };
+    let init = find(&INIT_UUID).ok_or("no init characteristic (0xFFF1)")?;
+    let notify = find(&NOTIFY_UUID).ok_or("no notify characteristic (0xFFF4)")?;
+    // Order matters — and on this firmware it is the reverse of the old doc's
+    // "init with write response, only then subscribe": the S3 answers a write
+    // WITH response with the vendor error 0x20 and stays silent, but accepts
+    // the init write WITHOUT response; telemetry flows once subscribed, so
+    // subscribe first, then write (probed against the real bike, 2026-11).
+    named_step("subscribing to 0xFFF4", peripheral.subscribe(&notify)).await?;
+    named_step(
+        "writing the init packet (0xFFF1, without response)",
+        peripheral.write(&init, &INIT_PACKET, WriteType::WithoutResponse),
     )
-    .await??;
-    tokio::time::timeout(STEP_TIMEOUT, peripheral.subscribe(&notify)).await??;
+    .await?;
 
     let mut link = Link::new(now_s());
     hub.publish(Status::from_reading(Reading::zeroed()));
@@ -142,4 +180,18 @@ fn now_s() -> f64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_scan_that_is_already_running_is_not_a_failure() {
+        // BlueZ's org.bluez.Error.InProgress text as it arrives through btleplug.
+        let error = btleplug::Error::Other("org.bluez.Error.InProgress: Operation already in progress".into());
+        assert!(scan_in_progress(&error));
+        assert!(!scan_in_progress(&btleplug::Error::PermissionDenied));
+        assert!(!scan_in_progress(&btleplug::Error::DeviceNotFound));
+    }
 }

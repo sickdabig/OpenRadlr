@@ -25,11 +25,20 @@ Order matters -- the bike is silent until handshaked:
    advertises name `YESOUL` (variants like `YS_G1M_*` exist for other models).
 2. Connect (auto-connect: the bike stops advertising when powered off).
 3. Service discovery; take 0xFFF1 (write) and 0xFFF4 (notify).
-4. Write the init packet to 0xFFF1 **with write response**:
+4. **Subscribe to 0xFFF4** (write `01 00` to its Client Characteristic
+   Configuration descriptor).
+5. **Then** write the init packet to 0xFFF1 **without response**:
    `f5 20 20 40 f6` (always the same 5 bytes).
-5. Only then write `01 00` to 0xFFF4's Client Characteristic Configuration
-   descriptor to subscribe. QZ notes: "requires first to be initialized and
-   then you can subscribe".
+6. Telemetry flows ~1 Hz once the init packet was accepted.
+
+Probed against the real bike (2026-11, BlueZ/btleplug): every write **with**
+response to 0xFFF1 is rejected with the vendor ATT error `0x20` (not a
+standard ATT code) and the bike stays silent; the same packet **without**
+response is accepted immediately. An earlier revision of this doc claimed the
+opposite (init with response, then subscribe, following a QZ note); that does
+not match this bike. **Pairing is not part of the sequence**: the bike ignores
+SMP pairing attempts outright (connect stays `Paired: no`) and works fine
+unbonded, so no pairing button on the bike is needed.
 
 ## Notification packet (0xFFF4)
 
@@ -84,7 +93,9 @@ match this S3 -- only useful with other Yesoul models:
 ## Provenance / confidence
 
 - Connection sequence, packet length, field offsets 4/6/7-8 and big-endian
-  watts: verified against QZ source (2025-11) and working bridge on this S3.
+  watts: verified against QZ source (2025-11) and a working bridge on this S3;
+  the handshake order and write type were re-verified directly against the
+  bike (2026-11) after the bridge's claimed order failed in the field.
 - Distance unit (km) and resistance range: reported by QZ, not
   independently verified against the bike.
 - The unknown header bytes (0..1, 5, 9..11): observed stable/zero, no

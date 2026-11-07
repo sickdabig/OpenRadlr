@@ -44,9 +44,11 @@ A server built with the `bike` cargo feature and started with
 Bluetooth adapter — no Web Bluetooth, so any OpenRadlr client in the house
 can ride it, a phone without Bluetooth support included. The protocol lives
 in [`yesoul-s3-protocol.md`](yesoul-s3-protocol.md); the pieces are the
-proprietary service `0xFFF0`, an init packet (`f5 20 20 40 f6`) written to
-`0xFFF1` with response **before** subscribing to the 12-byte notifications on
-`0xFFF4`, and ~1 Hz packets with power, cadence, resistance and a distance
+proprietary service `0xFFF0`, a subscription to the 12-byte notifications on
+`0xFFF4` **before** the init packet (`f5 20 20 40 f6`) is written to `0xFFF1`
+without response (probed against the real bike, 2026-11: a write with response
+answers the vendor ATT error 0x20, and pairing is neither needed nor answered),
+and ~1 Hz packets with power, cadence, resistance and a distance
 counter, all big-endian.
 
 The bike's connection is the server's business, the origin of the readings is
