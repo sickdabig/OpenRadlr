@@ -36,6 +36,8 @@ export const ClientMessages = Object.freeze({
   laneLeft: () => ({ type: "input", action: "lane_left" }),
   laneRight: () => ({ type: "input", action: "lane_right" }),
   startRace: (laps) => ({ type: "start_race", laps }),
+  /** The spin studio: start a class in my room now (ADR 0011). */
+  startClass: (classId) => ({ type: "start_class", class_id: classId }),
   joinRace: () => ({ type: "join_race" }),
   leaveRace: () => ({ type: "leave_race" }),
   joinEvent: (id) => ({ type: "join_event", event_id: id }),

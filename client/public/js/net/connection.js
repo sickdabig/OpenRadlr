@@ -144,6 +144,10 @@ export class GameConnection extends Emitter {
     this.#send(ClientMessages.startRace(laps));
   }
 
+  startClass(classId) {
+    this.#send(ClientMessages.startClass(classId));
+  }
+
   chat(text) {
     if (text.trim()) this.#send(ClientMessages.chat(text));
   }

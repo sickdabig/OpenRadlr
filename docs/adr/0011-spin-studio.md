@@ -37,6 +37,12 @@ world they talk to.
   absolute watts.
 - Riders still get speed and distance from flat-road physics, so a studio
   ride records and uploads like any other (without GPS positions).
+- **Classes on demand.** A rider who does not want to wait for the next slot
+  can start any class of the catalog in their room right away (`start_class`):
+  the room rides it at once, its board scores reset, and when it ends the room
+  returns to the rolling timetable. Rooms that nobody starts a class for keep
+  the schedule. The timetable stays the default so a room of strangers still
+  agrees on what runs when.
 
 ## Consequences
 

@@ -43,9 +43,11 @@ import { SPLIT_SETTINGS, computeSplits, resolveSplitMode } from "./ride/splits.j
 import { toLatLon } from "./route/geo.js";
 import { RouteGeometry } from "./route/geometry.js";
 import { fetchMapNeighbours, fetchMapNetwork, roadNetworkOf } from "./route/worldMap.js";
+import { wireClassPicker } from "./studio/classPicker.js";
 import { studioBoard } from "./studio/board.js";
 import { classWorkout } from "./studio/classClock.js";
 import { StudioSession } from "./studio/studioSession.js";
+import { chooseVideo, clearVideo } from "./view3d/videoScreen.js";
 import { displayToKg, distanceUnit, formatDistance, formatDistanceWithUnit, formatDuration, formatElevation, formatGrade, formatLength, formatNumber, formatSpeed, formatWkg, kgToDisplay, setUnits, speedUnit, unitMetres, weightUnit } from "./util/format.js";
 import { themeColors } from "./view/canvas.js";
 import { drawMinimap } from "./view/minimapView.js";
@@ -401,6 +403,8 @@ const app = {
   /** Spin studio ride (null on a route): class clock, targets, ERG. */
   studio: null,
   studioView: null,
+  /** The video the rider put on the studio's screen (null: none). */
+  studioVideoUrl: null,
   /** The café workout of this ride (null on a road or in the studio, #77). */
   workout: null,
   /** The structured workout a training join starts (null elsewhere). */
@@ -1588,6 +1592,7 @@ function endRide() {
     rideSaved: false,
     studio: null,
     studioView: null,
+    studioVideoUrl: clearVideo(app.studioVideoUrl),
     workout: null,
     pendingWorkout: null,
     workoutPlan: null,
@@ -1685,6 +1690,11 @@ function wireConnection(connection) {
     if (app.workout && (code === "in_workout" || code === "not_in_workout")) return console.warn("workout:", code, message);
     // A refused turn: the server's plan stands, the next state shows it.
     if (code === "turn_rejected") app.myRoad = app.myRoad && { ...app.myRoad, next: null };
+    // A refused class start: the room's class stands; pick one from the list.
+    if (code === "class_unknown") {
+      notify(t("studio.error.classUnknown"), "error");
+      return;
+    }
     if (code === "vehicle_elsewhere" && boardElsewhere(elsewhereRoute(message))) return;
     notify(vehicleErrorLine(code) ?? message, "error");
   });
@@ -2066,6 +2076,13 @@ function startStudio({ simulated, setSimPower }) {
     writeSetting(COACH_VOICE_KEY, app.coachVoice ? "on" : "off");
     renderControls();
   });
+  wireClassPicker({
+    select: $("studio-class-pick"),
+    button: $("studio-class-start"),
+    options: [...app.studio.classes.values()],
+    onStart: (classId) => app.connection.startClass(classId),
+  });
+  wireStudioVideo();
   renderControls();
 
   if (isWebGl2Available()) {
@@ -2073,6 +2090,7 @@ function startStudio({ simulated, setSimPower }) {
       app.studioView = new StudioView3D($("studio3d"), $("studio-labels"));
       const camera = readSetting(STUDIO_CAMERA_KEY);
       if (STUDIO_CAMERAS.includes(camera)) app.studioView.cameraMode = camera;
+      app.studioView.setVideo($("studio-video"));
     } catch (error) {
       console.error(error);
       notify(t("studio.unavailable3d"), "error");
@@ -2090,6 +2108,29 @@ function startStudio({ simulated, setSimPower }) {
     closePanels: () => closeTopPanel(),
   };
   app.ride.unbindKeyboard = bindKeyboard(window, app.actions);
+}
+
+/** The rider's video on the studio's screen: pick a file, stop it again. */
+function wireStudioVideo() {
+  const video = $("studio-video");
+  const file = $("studio-video-file");
+  $("studio-video-pick").addEventListener("click", () => file.click());
+  file.addEventListener("change", () => {
+    app.studioVideoUrl = chooseVideo(app.studioVideoUrl, file.files[0]);
+    if (!app.studioVideoUrl) return;
+    video.src = app.studioVideoUrl;
+    video.loop = true;
+    video.muted = true;
+    video.play().catch(() => {});
+    $("studio-video-stop").hidden = false;
+  });
+  $("studio-video-stop").addEventListener("click", () => {
+    app.studioVideoUrl = clearVideo(app.studioVideoUrl);
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    $("studio-video-stop").hidden = true;
+  });
 }
 
 /** The coach reads a cue out loud, if the rider wants that. */

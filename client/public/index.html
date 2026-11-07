@@ -242,6 +242,7 @@
         <div id="studio-wrap" class="world-wrap studio-only" hidden>
           <canvas id="studio3d" class="canvas-world" aria-label="3D view of the spin studio" data-i18n-attr="aria-label:ride.3dViewOfThe2"></canvas>
           <div id="studio-labels" class="labels3d" aria-hidden="true"></div>
+          <video id="studio-video" muted loop playsinline hidden></video>
         </div>
 
         <!-- Phone paddles: tap left and right in turn; swipe above them for lanes -->
@@ -484,6 +485,15 @@
             </div>
 
             <div class="studio-controls">
+              <span class="intensity glass" title="A class of the catalog, started now" data-i18n-attr="title:studio.classPickTitle">
+                <select id="studio-class-pick" aria-label="Pick a class to start now" data-i18n-attr="aria-label:studio.classPick"></select>
+                <button type="button" id="studio-class-start" data-i18n="studio.startNow">Start now</button>
+              </span>
+              <span class="intensity glass">
+                <button type="button" id="studio-video-pick" title="Play a video on the screen" data-i18n="studio.video" data-i18n-attr="title:studio.videoTitle">Video</button>
+                <button type="button" id="studio-video-stop" hidden aria-label="Stop the video" data-i18n-attr="aria-label:studio.videoStop">×</button>
+                <input type="file" id="studio-video-file" accept="video/*" hidden />
+              </span>
               <button type="button" id="studio-erg" class="glass toggle" aria-pressed="true" title="ERG: the trainer holds the target" data-i18n-attr="title:ride.ergTheTrainerHolds">ERG</button>
               <span class="intensity glass" title="Intensity (↑/↓)" data-i18n-attr="title:ride.intensity">
                 <button type="button" id="studio-intensity-down" aria-label="Lower intensity" data-i18n-attr="aria-label:ride.lowerIntensity">−</button>

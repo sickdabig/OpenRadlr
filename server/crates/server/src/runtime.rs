@@ -80,6 +80,8 @@ pub trait Game: Send + 'static {
     fn telemetry(&mut self, rider_id: RiderId, power: f64, cadence: Option<f64>);
     fn input(&mut self, _rider_id: RiderId, _action: InputAction) {}
     fn start_race(&mut self, _rider_id: RiderId, _laps: u32) {}
+    /// Starts a spin-studio class in the rider's room; other games ignore it.
+    fn start_class(&mut self, _rider_id: RiderId, _class_id: &str) {}
     fn join_race(&mut self, _rider_id: RiderId) {}
     fn leave_race(&mut self, _rider_id: RiderId) {}
     fn join_event(&mut self, _rider_id: RiderId, _event_id: &str) {}
@@ -147,6 +149,10 @@ pub enum Command {
     StartRace {
         rider_id: RiderId,
         laps: u32,
+    },
+    StartClass {
+        rider_id: RiderId,
+        class_id: String,
     },
     JoinRace {
         rider_id: RiderId,
@@ -405,6 +411,7 @@ pub(crate) fn apply<G: Game>(core: &mut G, command: Command) {
         } => core.telemetry(rider_id, power, cadence),
         Command::Input { rider_id, action } => core.input(rider_id, action),
         Command::StartRace { rider_id, laps } => core.start_race(rider_id, laps),
+        Command::StartClass { rider_id, class_id } => core.start_class(rider_id, &class_id),
         Command::JoinRace { rider_id } => core.join_race(rider_id),
         Command::LeaveRace { rider_id } => core.leave_race(rider_id),
         Command::JoinEvent { rider_id, event_id } => core.join_event(rider_id, &event_id),

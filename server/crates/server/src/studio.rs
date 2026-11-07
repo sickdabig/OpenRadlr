@@ -217,6 +217,22 @@ impl Game for StudioCore {
         }
     }
 
+    /// Starts the picked class in the rider's room and tells the room at once.
+    fn start_class(&mut self, rider_id: RiderId, class_id: &str) {
+        let Some(room) = self.room_of(rider_id) else {
+            return;
+        };
+        if self.studio.start_class(room, class_id) {
+            let message = studio_state_message(&self.studio, room, self.tick);
+            self.send_to_room(room, &message);
+        } else if let Some(client) = self.clients.get(&rider_id) {
+            let _ = client.deliver(ServerMessage::error(
+                "class_unknown",
+                "no class with this id; see /api/studio",
+            ));
+        }
+    }
+
     /// Chat stays in the rider's room.
     fn chat(&mut self, rider_id: RiderId, text: &str) {
         if !self.clients.contains_key(&rider_id) {
@@ -529,6 +545,46 @@ mod tests {
         let mut core = core(0, 10);
         let (_, sink) = join_90_kg(&mut core);
         assert_eq!(joined_physics(&sink.take()).mass_kg, 100.0);
+    }
+
+    fn error_codes(messages: &[ServerMessage]) -> Vec<&str> {
+        messages
+            .iter()
+            .filter_map(|m| match m {
+                ServerMessage::Error { code, .. } => Some(code.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn starting_a_class_switches_the_rooms_class_at_once() {
+        let mut core = core(0, 50);
+        let (anna, sink) = join(&mut core, "Anna");
+        core.start_class(anna, "climb-pyramid");
+        let taken = sink.take();
+        let states: Vec<&ServerMessage> = studio_states(&taken);
+        let ServerMessage::StudioState { class, .. } = states[states.len() - 1] else {
+            panic!("expected a studio state");
+        };
+        assert_eq!(class.id, "climb-pyramid");
+        assert_eq!(class.elapsed_s, 0.0, "the class starts now, no lobby");
+    }
+
+    #[test]
+    fn an_unknown_class_is_refused_and_the_rooms_class_stands() {
+        let mut core = core(0, 50);
+        let (anna, sink) = join(&mut core, "Anna");
+        core.start_class(anna, "nope");
+        assert_eq!(error_codes(&sink.take()), vec!["class_unknown"]);
+        for _ in 0..5 {
+            core.tick();
+        }
+        let taken = sink.take();
+        let ServerMessage::StudioState { class, .. } = studio_states(&taken)[0] else {
+            panic!("expected a studio state");
+        };
+        assert_eq!(class.id, "tempo", "the slot's class");
     }
 
     #[test]

@@ -63,6 +63,9 @@ pub enum PlayerCommand {
     StartRace {
         laps: u32,
     },
+    StartClass {
+        class_id: String,
+    },
     JoinRace,
     LeaveRace,
     JoinEvent {
@@ -268,6 +271,9 @@ impl Session {
             }
             (Phase::Joined(_), ClientMessage::Input { action }) => Action::Forward(PlayerCommand::Input(action)),
             (Phase::Joined(_), ClientMessage::StartRace { laps }) => Action::Forward(PlayerCommand::StartRace { laps }),
+            (Phase::Joined(_), ClientMessage::StartClass { class_id }) => {
+                Action::Forward(PlayerCommand::StartClass { class_id })
+            }
             (Phase::Joined(_), ClientMessage::JoinRace) => Action::Forward(PlayerCommand::JoinRace),
             (Phase::Joined(_), ClientMessage::LeaveRace) => Action::Forward(PlayerCommand::LeaveRace),
             (Phase::Joined(_), ClientMessage::JoinEvent { event_id }) => {

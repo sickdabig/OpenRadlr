@@ -26,6 +26,7 @@ import {
 } from "./riderModel.js";
 import { hexToRgb, projectToScreen, visibleLabels } from "./view3d.js";
 import { sunShadowMatrix } from "./lighting.js";
+import { VideoScreen } from "./videoScreen.js";
 
 export const ROOM = Object.freeze({ halfWidth: 7.5, front: -9.5, back: 6.5, height: 4.6 });
 const ROW_GAP = 2.6;
@@ -63,7 +64,10 @@ const FLOOR = [0.36, 0.27, 0.2];
 const CEILING = [0.06, 0.06, 0.08];
 const STAGE_TOP = [0.18, 0.18, 0.22];
 const RISER_TOP = [0.3, 0.23, 0.18];
-const SCREEN = [0.04, 0.05, 0.08];
+const SCREEN_COLOR = [0.04, 0.05, 0.08];
+
+/** The big screen on the front wall: the mesh and the video's quad derive from it. */
+export const SCREEN = Object.freeze({ center: [0, 2.5, ROOM.front + 0.06], size: [7.2, 2.6, 0.1] });
 const TRAINER = [0.1, 0.1, 0.12];
 const TRAINER_FOOT = [0.3, 0.31, 0.34];
 const SPEAKER = [0.08, 0.08, 0.09];
@@ -110,7 +114,7 @@ export function buildStudioRoom() {
   addTrainer(room, INSTRUCTOR.position);
 
   // Big screen on the front wall, speakers in the corners.
-  room.box([0, 2.5, f + 0.06], [7.2, 2.6, 0.1], SCREEN);
+  room.box(SCREEN.center, SCREEN.size, SCREEN_COLOR);
   for (const side of [-1, 1]) {
     room.box([side * (w - 0.6), 3.4, f + 0.5], [0.6, 0.9, 0.5], SPEAKER);
     room.box([side * (w - 0.6), 3.4, b - 0.5], [0.6, 0.9, 0.5], SPEAKER);
@@ -167,6 +171,7 @@ export class StudioView3D {
     this.canvas = canvas;
     this.labelLayer = labelLayer;
     this.renderer = new Renderer(gl);
+    this.videoScreen = new VideoScreen(gl);
     this.shadowsEnabled = this.renderer.createShadowMap(1024);
     const { room, neon } = buildStudioRoom();
     this.room = this.renderer.upload(room);
@@ -191,6 +196,11 @@ export class StudioView3D {
 
   setQuality(quality) {
     if (quality === "high" || quality === "low") this.quality = quality;
+  }
+
+  /** The rider's video on the screen (null: the screen stays dark). */
+  setVideo(video) {
+    this.videoScreen.setVideo(video);
   }
 
   /** Upper-body parts of a rider in the riding pose, hung off `model` (the bike frame). */
@@ -269,6 +279,7 @@ export class StudioView3D {
 
     this.renderer.begin({ viewProjection, inverseViewProjection, camera: eye, ...STUDIO_LIGHT, shadowStrength: high ? STUDIO_LIGHT.shadowStrength : 0 });
     this.renderer.draw(this.room, this.identity);
+    this.videoScreen.draw(viewProjection);
     this.renderer.drawBright(this.neon, this.identity, 1);
     for (const part of drawn) {
       this.renderer.draw(this.bodies[part.variant], part.model, part.tint);
@@ -329,6 +340,7 @@ export class StudioView3D {
   }
 
   dispose() {
+    this.videoScreen.dispose();
     for (const handle of [this.room, this.neon, ...this.bodies, ...this.bodyParts.flatMap((p) => [...p.values()]), ...this.thighs, ...this.shins, this.foot, this.crankset, this.wheel, this.shadow]) {
       this.renderer.dispose(handle);
     }

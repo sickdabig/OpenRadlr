@@ -115,11 +115,12 @@ test("forwards game messages and sends commands after joining", async () => {
   connection.sendTelemetry({ power: 210, cadence: 88 });
   connection.laneRight();
   connection.startRace(2);
+  connection.startClass("tempo");
   connection.chat("   ");
   connection.chat("hi");
   assert.deepEqual(
     socket().sent.slice(2).map((m) => m.type),
-    ["telemetry", "input", "start_race", "chat"],
+    ["telemetry", "input", "start_race", "start_class", "chat"],
   );
 });
 
