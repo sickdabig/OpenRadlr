@@ -1,71 +1,51 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addonsShown, bluetoothUnavailableReason, chooseRideMode, connectErrorText, controllerCheck, controllerLine, controllerSide, deviceActions, expectsOtherHalf, liveCheck, missingHalfHint, needsDownButton, remapForDown, DOWN_BUTTON, rideModes } from "../public/js/view/deviceSetup.js";
+import { chooseRideMode, liveCheck, rideModes } from "../public/js/view/deviceSetup.js";
 
 const road = { id: "col" };
 const studio = { id: "spin-studio", kind: "studio" };
 const ids = (modes) => modes.map((mode) => mode.id);
 
-test("the ways to ride: a smart trainer, phone paddles and the simulator, as far as the server allows", () => {
-  assert.deepEqual(ids(rideModes({ info: {}, picked: road })), ["trainer", "paddles", "sim"]);
-  assert.deepEqual(ids(rideModes({ info: { paddle_mode: false }, picked: road })), ["trainer", "sim"]);
-  assert.deepEqual(ids(rideModes({ info: { simulated_trainer: false }, picked: road })), ["trainer", "paddles"]);
-  assert.deepEqual(ids(rideModes({ info: null, picked: null })), ["trainer", "paddles", "sim"]);
+test("the ways to ride: the server's bike, phone paddles and the simulator, as far as the server allows", () => {
+  assert.deepEqual(ids(rideModes({ info: { bike: { kind: "yesoul" } }, picked: road })), ["trainer", "paddles", "sim"]);
+  assert.deepEqual(ids(rideModes({ info: { bike: { kind: "yesoul" }, paddle_mode: false }, picked: road })), ["trainer", "sim"]);
+  assert.deepEqual(ids(rideModes({ info: { bike: { kind: "yesoul" }, simulated_trainer: false }, picked: road })), ["trainer", "paddles"]);
+  assert.deepEqual(ids(rideModes({ info: null, picked: null })), ["paddles", "sim"], "no bike reported, no trainer mode");
+});
+
+test("the trainer mode is the server's own bike, with its hint", () => {
+  const modes = rideModes({ info: { bike: { kind: "yesoul" } }, picked: road });
+  assert.equal(modes[0].label, "Server's bike");
+  assert.equal(modes[0].hint, "The server's Bluetooth");
+  assert.equal(modes[0].available, true);
 });
 
 test("phone paddles ride the roads only: in the studio they're offered but unavailable, with the reason", () => {
-  const paddles = rideModes({ info: {}, picked: studio }).find((mode) => mode.id === "paddles");
+  const paddles = rideModes({ info: { bike: { kind: "yesoul" } }, picked: studio }).find((mode) => mode.id === "paddles");
   assert.equal(paddles.available, false);
   assert.match(paddles.reason, /trainer/);
-  assert.equal(rideModes({ info: {}, picked: road }).find((mode) => mode.id === "paddles").available, true);
+  assert.equal(rideModes({ info: { bike: { kind: "yesoul" } }, picked: road }).find((mode) => mode.id === "paddles").available, true);
 });
 
 test("the remembered way to ride is kept while it's available", () => {
-  const modes = rideModes({ info: {}, picked: road });
-  assert.equal(chooseRideMode("paddles", modes, true), "paddles");
-  assert.equal(chooseRideMode("sim", modes, false), "sim");
+  const modes = rideModes({ info: { bike: { kind: "yesoul" } }, picked: road });
+  assert.equal(chooseRideMode("paddles", modes), "paddles");
+  assert.equal(chooseRideMode("sim", modes), "sim");
 });
 
-test("without a choice: the smart trainer where Bluetooth works, else phone paddles, else the simulator", () => {
-  const modes = rideModes({ info: {}, picked: road });
-  assert.equal(chooseRideMode(null, modes, true), "trainer");
-  assert.equal(chooseRideMode(null, modes, false), "paddles");
-  assert.equal(chooseRideMode(null, rideModes({ info: { paddle_mode: false }, picked: road }), false), "sim");
-  assert.equal(chooseRideMode(null, rideModes({ info: { paddle_mode: false, simulated_trainer: false }, picked: road }), false), "trainer");
+test("without a choice: the server's bike, else phone paddles, else the simulator", () => {
+  const modes = rideModes({ info: { bike: { kind: "yesoul" } }, picked: road });
+  assert.equal(chooseRideMode(null, modes), "trainer");
+  assert.equal(chooseRideMode(null, rideModes({ info: null, picked: road })), "paddles");
+  assert.equal(chooseRideMode(null, rideModes({ info: { paddle_mode: false }, picked: road })), "sim");
+  assert.equal(chooseRideMode(null, rideModes({ info: { paddle_mode: false, simulated_trainer: false }, picked: road })), null);
 });
 
 test("a remembered choice that isn't available here falls back like no choice", () => {
-  assert.equal(chooseRideMode("paddles", rideModes({ info: {}, picked: studio }), true), "trainer");
-  assert.equal(chooseRideMode("sim", rideModes({ info: { simulated_trainer: false }, picked: road }), false), "paddles");
-  assert.equal(chooseRideMode("bogus", rideModes({ info: {}, picked: road }), true), "trainer");
-});
-
-test("the server's own bike needs no browser Bluetooth: a browser without it is still steered to the trainer panel", () => {
-  assert.equal(chooseRideMode(null, rideModes({ info: {}, picked: road }), false, { serverBike: true }), "trainer");
-  // The server bike never overrules a rider's own pick.
-  assert.equal(chooseRideMode("paddles", rideModes({ info: {}, picked: road }), false, { serverBike: true }), "paddles");
-  // With browser Bluetooth the choice is the same; the flag only opens the door.
-  assert.equal(chooseRideMode(null, rideModes({ info: {}, picked: road }), true, { serverBike: false }), "trainer");
-});
-
-test("heart rate and controller are add-ons to Bluetooth riding: not with paddles, heart rate alone for the workout", () => {
-  assert.deepEqual(addonsShown("trainer", true, road), { hr: true, controller: true });
-  assert.deepEqual(addonsShown("sim", true, road), { hr: true, controller: true });
-  assert.deepEqual(addonsShown("paddles", true, road), { hr: false, controller: false });
-  assert.deepEqual(addonsShown("trainer", false, road), { hr: false, controller: false });
-  assert.deepEqual(addonsShown("paddles", true, { kind: "workout" }), { hr: true, controller: false });
-  assert.deepEqual(addonsShown("trainer", false, { kind: "workout" }), { hr: false, controller: false });
-});
-
-test("connect errors in plain words: what to do, not what the browser said", () => {
-  const err = (name, message = "") => Object.assign(new Error(message), { name });
-  assert.equal(connectErrorText(err("NotFoundError", "User cancelled the requestDevice() chooser.")), "Cancelled");
-  assert.match(connectErrorText(err("NotFoundError", "Bluetooth adapter not available.")), /Bluetooth is off/);
-  assert.match(connectErrorText(err("TimeoutError"), "KICKR CORE"), /No answer from KICKR CORE.*other apps/);
-  assert.match(connectErrorText(err("NetworkError", "GATT operation failed for unknown reason.")), /Couldn't connect.*pedal/);
-  assert.match(connectErrorText(err("SecurityError")), /blocked .*browser settings/);
-  assert.match(connectErrorText(new Error("This device offers neither FTMS Indoor Bike Data nor Cycling Power data.")), /doesn't send power/);
-  assert.match(connectErrorText(new Error("Something odd")), /Something odd.*Device diagnostics/);
+  assert.equal(chooseRideMode("trainer", rideModes({ info: null, picked: road })), "paddles");
+  assert.equal(chooseRideMode("paddles", rideModes({ info: { bike: { kind: "yesoul" } }, picked: studio })), "trainer", "in the studio the server bike takes over");
+  assert.equal(chooseRideMode("sim", rideModes({ info: { simulated_trainer: false }, picked: road })), "paddles", "no bike reported, so paddles take over");
+  assert.equal(chooseRideMode("bogus", rideModes({ info: { bike: { kind: "yesoul" } }, picked: road })), "trainer");
 });
 
 test("the live check: waiting, connected and still, the numbers once power flows, a hint when data stops", () => {
@@ -76,102 +56,4 @@ test("the live check: waiting, connected and still, the numbers once power flows
   const silent = liveCheck({ sinceDataMs: 7_400, power: 182 });
   assert.equal(silent.state, "silent");
   assert.match(silent.text, /No data for 7 s/);
-});
-
-test("each device line has one main action: reconnect the known one, add or change, never both squeezed in", () => {
-  assert.deepEqual(deviceActions({ kind: "controller", connected: false, remembered: true }), { reconnect: true, other: "Other" });
-  assert.deepEqual(deviceActions({ kind: "controller", connected: false, remembered: false }), { reconnect: false, other: "Add" });
-  assert.deepEqual(deviceActions({ kind: "controller", connected: true, remembered: false }), { reconnect: false, other: "Add another" });
-  assert.deepEqual(deviceActions({ kind: "hr", connected: true, remembered: true }), { reconnect: false, other: "Change" });
-  assert.deepEqual(deviceActions({ kind: "hr", connected: false, remembered: false }), { reconnect: false, other: "Add" });
-  assert.deepEqual(deviceActions({ kind: "trainer", connected: false, remembered: false }), { reconnect: false, other: "Connect" });
-  assert.deepEqual(deviceActions({ kind: "trainer", connected: true, remembered: true }), { reconnect: false, other: "Change" });
-});
-
-test("the controller check confirms + and − one by one: with two Click halves, both must arrive", () => {
-  assert.equal(controllerCheck({ seen: new Set() }), "Press + and − to check");
-  assert.equal(controllerCheck({ seen: new Set(["shiftUp"]) }), "✓ + works · press − to check");
-  assert.equal(controllerCheck({ seen: new Set(["shiftDown"]) }), "✓ − works · press + to check");
-  assert.equal(controllerCheck({ seen: new Set(["shiftUp", "shiftDown"]) }), "✓ + and − both work");
-  assert.equal(controllerCheck({ seen: new Set(["a"]), last: { label: "Zwift Play", buttons: ["a"] } }), "✓ Zwift Play: A · press + and − to check");
-});
-
-test("a controller's side comes from its first shift: a Click v2 half sends only + or only −", () => {
-  assert.equal(controllerSide(new Set()), null);
-  assert.equal(controllerSide(new Set(["shiftUp", "y"])), "+");
-  assert.equal(controllerSide(new Set(["shiftDown"])), "−");
-  assert.equal(controllerSide(new Set(["shiftUp", "shiftDown"])), null, "a one-piece controller has both");
-});
-
-test("the controller line lists each half with its side and battery", () => {
-  const click = (side, battery, connected = true) => ({ label: "Zwift Click", seen: new Set(side ? [side === "+" ? "shiftUp" : "shiftDown"] : []), battery, connected });
-  assert.equal(controllerLine([click("−", 70), click("+", 68)]), "Zwift Click − 70 % · + 68 %", "a pair: the name once");
-  assert.equal(controllerLine([click(null, null)]), "Zwift Click");
-  assert.equal(controllerLine([click(null, null), click(null, null)]), "Zwift Click · both halves", "a pair before anything is known");
-  assert.equal(controllerLine([click("−", 70), click(null, null)]), "Zwift Click − 70 % · other half");
-  assert.equal(controllerLine([click("−", 70)]), "Zwift Click − 70 %");
-  assert.equal(controllerLine([click("−", 70), click("+", 68, false)]), "Zwift Click − 70 % · + reconnecting…");
-  assert.equal(controllerLine([click("+", 68), { label: "Zwift Play", seen: new Set(), battery: 50, connected: true }]), "Zwift Click + 68 % · Zwift Play 50 %");
-});
-
-test("one Click or Play half connected: the other half is expected", () => {
-  const half = (label, seen = []) => ({ label, seen: new Set(seen), connected: true });
-  // Click v2 halves differ: one relays the other, one sends only its own side. Both, to be sure.
-  assert.equal(expectsOtherHalf([half("Zwift Click", ["shiftUp"])]), true);
-  assert.equal(expectsOtherHalf([half("Zwift Play")]), true);
-  assert.equal(expectsOtherHalf([half("Zwift Play", ["shiftUp", "shiftDown"])]), false);
-  assert.equal(expectsOtherHalf([half("Zwift Ride")]), false);
-  assert.equal(expectsOtherHalf([half("Zwift Click"), half("Zwift Click")]), false);
-  assert.equal(expectsOtherHalf([]), false);
-  assert.deepEqual(deviceActions({ kind: "controller", connected: true, remembered: false, otherHalf: true }), { reconnect: false, other: "Add other half" });
-});
-
-test("a lone Click half that only sends its own side asks for the other half", () => {
-  const half = (seen, relays) => ({ label: "Zwift Click", seen: new Set(seen), connected: true, relays });
-  assert.equal(missingHalfHint([half(["shiftUp"], false)]), "Right half only: + shifts up, B shifts down. Add the other half for the − lever.");
-  assert.equal(missingHalfHint([half([], false)]), "Right half only: + shifts up, B shifts down. Add the other half for the − lever.");
-  assert.equal(missingHalfHint([half([], true)]), null, "it relays: both sides arrive");
-  assert.equal(missingHalfHint([half([], false), half([], true)]), null, "both connected");
-  assert.equal(missingHalfHint([{ label: "Zwift Ride", seen: new Set(), connected: true, relays: false }]), null);
-});
-
-test("picking the half that's already connected says which one to pick", () => {
-  assert.match(connectErrorText(new Error("Zwift Click is already connected.")), /already connected: pick the other Zwift Click/);
-});
-
-
-// --- Click v2: shifting down when the left half can't ------------------------------------
-
-const clickHalf = ({ relays, locked = false, connected = true }) => ({ label: "Zwift Click", seen: new Set(), relays, locked, connected });
-
-test("a fallback button for shifting down is needed when no unlocked left Click half is connected", () => {
-  assert.equal(needsDownButton([clickHalf({ relays: true })]), false, "the left half shifts down itself");
-  assert.equal(needsDownButton([clickHalf({ relays: true, locked: true })]), true, "locked by Zwift's firmware");
-  assert.equal(needsDownButton([clickHalf({ relays: false })]), true, "the right half alone has no −");
-  assert.equal(needsDownButton([clickHalf({ relays: true }), clickHalf({ relays: false })]), false);
-  assert.equal(needsDownButton([clickHalf({ relays: true, locked: true }), clickHalf({ relays: false })]), true);
-  assert.equal(needsDownButton([{ label: "Zwift Ride", seen: new Set(), relays: true, locked: false, connected: true }]), false, "only the Click v2");
-  assert.equal(needsDownButton([]), false);
-});
-
-test("while needed, B on the right half shifts down (BikeControl's right-side mapping); otherwise buttons stay as they are", () => {
-  assert.equal(DOWN_BUTTON, "b");
-  assert.deepEqual(remapForDown(["b"], true), ["shiftDown"]);
-  assert.deepEqual(remapForDown(["b", "shiftUp"], true), ["shiftDown", "shiftUp"]);
-  assert.deepEqual(remapForDown(["b"], false), ["b"]);
-  assert.deepEqual(remapForDown(["a"], true), ["a"]);
-});
-
-test("why the warning: a non-secure page hides Web Bluetooth (even in Chrome), a browser without it is just old news", () => {
-  assert.equal(bluetoothUnavailableReason({ secure: false }), "start.needSecureOrigin");
-  assert.equal(bluetoothUnavailableReason({ secure: true }), "start.useChrome");
-});
-
-test("a collapsed server never shows the browser's peripheral rows: no add-ons, and the trainer card says the bike's place", () => {
-  const info = { bike: { kind: "yesoul" }, client_devices: false };
-  const modes = rideModes({ info, picked: road });
-  assert.equal(modes[0].hint, "Server's bike");
-  // add-ons follow the fourth parameter: nothing to connect when collapsed
-  assert.deepEqual(addonsShown("trainer", true, road, false), { hr: false, controller: false });
-  assert.deepEqual(addonsShown("trainer", true, road, true), { hr: true, controller: true });
 });

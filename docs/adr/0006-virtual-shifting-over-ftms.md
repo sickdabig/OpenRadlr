@@ -1,6 +1,6 @@
 # 6. Virtual shifting over standard FTMS
 
-Date: 2026-10-14 · Status: accepted
+Date: 2026-10-14 · Status: accepted (FTMS part superseded by [ADR 0021](0021-no-client-web-bluetooth.md): virtual shifting stays, but only for trainers the server reaches)
 
 ## Context
 

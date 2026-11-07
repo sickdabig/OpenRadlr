@@ -1,6 +1,6 @@
 # 12. Zwift controllers over their unencrypted protocol
 
-Date: 2026-10-15 · Status: accepted
+Date: 2026-10-15 · Status: superseded by [ADR 0021](0021-no-client-web-bluetooth.md) (the browser no longer talks to Bluetooth)
 
 ## Context
 

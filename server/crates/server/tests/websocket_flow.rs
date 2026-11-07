@@ -223,40 +223,19 @@ async fn info_lists_every_route_with_the_default_first() {
     assert_eq!(http_get(addr, "/api/map?id=nope").await.0, 404);
 }
 
-#[tokio::test]
-async fn a_server_without_a_bike_always_offers_client_devices() {
-    for config in [
-        test_config(0),
-        Config {
-            allow_client_devices: true,
-            ..test_config(0)
-        },
-    ] {
-        let addr = start_server_with(config).await;
-        let (_, body) = http_get(addr, "/api/info").await;
-        let info: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(info["bike"], Value::Null, "no bike configured");
-        assert_eq!(info["client_devices"], true, "there is nothing else to ride");
-    }
-}
-
 /// Only a build with the `bike` feature can carry a `BikeHub` itself; without
 /// it, a configured bike warns and stays out of `/api/info` entirely.
 #[cfg(feature = "bike")]
 #[tokio::test]
-async fn a_server_with_a_bike_collapses_client_devices_by_default() {
-    for (flag, expected) in [(false, false), (true, true)] {
-        let addr = start_server_with(Config {
-            bike: Some(openradlr_server::config::BikeKind::Yesoul),
-            allow_client_devices: flag,
-            ..test_config(0)
-        })
-        .await;
-        let (_, body) = http_get(addr, "/api/info").await;
-        let info: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(info["bike"]["kind"], "yesoul");
-        assert_eq!(info["client_devices"], expected);
-    }
+async fn a_configured_bike_shows_in_info() {
+    let addr = start_server_with(Config {
+        bike: Some(openradlr_server::config::BikeKind::Yesoul),
+        ..test_config(0)
+    })
+    .await;
+    let (_, body) = http_get(addr, "/api/info").await;
+    let info: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(info["bike"]["kind"], "yesoul");
 }
 
 #[tokio::test]

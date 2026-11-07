@@ -10,7 +10,7 @@
   <sub><i>Radler</i> (German): a cyclist. Also half beer, half lemonade — the usual reward afterwards.</sub>
 </p>
 
-Hook up a smart trainer, open the browser and ride a virtual route together with
+Ride the server's own bike, open the browser and join a virtual route together with
 others. Run your own server at home for your LAN, on a VPS for your club, or
 join a public one. This repository contains the **proof of concept**: a Rust
 game server and a browser client (installable as an app) with a 3D and a 2D
@@ -39,8 +39,8 @@ Requirements: Rust (cargo), Node.js with npm, and `make`.
 make dev
 ```
 
-Then open **http://localhost:7777** in Chrome or Edge, enter a name, connect your
-trainer (or pick *Simulated trainer*) and join. Optional settings live in `.env`
+Then open **http://localhost:7777** in any browser, enter a name, ride the
+server's bike (or pick *Simulated trainer*) and join. Optional settings live in `.env`
 (`make setup` copies `.env.example` to `.env`, and adds new settings on later
 runs) — `make dev` reads the Strava keys from it.
 
@@ -77,15 +77,14 @@ uploaded to Strava.
   with countdown and results, JSON over WebSocket. One world per map, a
   player cap, rate limits, optional "Connect with Strava" (as account and for
   uploads).
-- **Browser client** — Web Bluetooth for smart trainers (FTMS and Cycling Power,
-  e.g. Wahoo KICKR Core, Van Rysel D500) and heart rate straps, a simulated trainer,
-  trainer difficulty, virtual shifting (for Zwift Cog and single-gear setups), a
+- **Browser client** — rides the bike the server itself is connected to over its
+  own Bluetooth adapter (e.g. a Yesoul S3), plus a simulated trainer,
+  trainer difficulty, virtual shifting (for single-gear setups), a
   ERG mode with structured workouts (built-in presets and `.zwo` import),
   low-poly 3D view with chase camera, a 2D lane view, an elevation profile, a
   minimap, nearby riders, race panel and chat; live player counts in the start
   menu and during the ride; ride photos and a summary image; ride summary with
-  `.tcx`/`.gpx`/`.fit` download and Strava upload (as a virtual ride with its climbing), placed on the map in a virtual world off Mallorca;
-  power-only trainers and power meters (no resistance control) are supported.
+  `.tcx`/`.gpx`/`.fit` download and Strava upload (as a virtual ride with its climbing), placed on the map in a virtual world off Mallorca
 - **Spin studio** — stationary group classes next to the roads: a class starts
   every 30 minutes, riders sit side by side in rooms of 16 (bots fill the
   empty bikes), a coach calls the blocks, targets come from each rider's FTP
@@ -103,9 +102,9 @@ uploaded to Strava.
 - **Bots** — always marked as bots, ride on their own, chase drafts, race and
   sprint according to their style. They make room as humans join.
 
-Web Bluetooth works in Chromium browsers (Chrome, Edge) on Windows, macOS,
-Android and ChromeOS — not in Firefox or Safari/iOS. Without Bluetooth you can
-still ride with the simulated trainer.
+The client never talks to Bluetooth itself: the server's bike reaches the app
+through the server, so any browser can ride, a phone without Bluetooth support
+included.
 
 ## Commands
 
@@ -144,8 +143,7 @@ warning outcomes (`openradlr_afk_events_total`). The
 endpoint contains no rider names, IDs, credentials or request details. Scrape
 it from your monitoring stack; probe the public `/healthz` URL for liveness.
 
-**HTTPS:** browsers only allow Web Bluetooth on `https://` pages or on
-`http://localhost`. For a public server, point a DNS record at the machine and
+**HTTPS:** for a public server, point a DNS record at the machine and
 put a reverse proxy with TLS in front of the server (a Caddy example is in
 [docs/deploy.md](docs/deploy.md)); ports 80 and 443 must be reachable.
 
@@ -156,10 +154,7 @@ app; see [docs/deploy.md](docs/deploy.md#landing-page).
 
 **LAN / Tailscale:** the server listens on all interfaces by default
 (`OPENRADLR_BIND=0.0.0.0:8080`), so other machines reach the page via
-`http://<your-ip>:8080` or your Tailscale address — but their browsers block
-Bluetooth on plain HTTP. Put the server behind TLS with a real domain, or for
-quick tests enable
-`chrome://flags/#unsafely-treat-insecure-origin-as-secure` for that address.
+`http://<your-ip>:8080` or your Tailscale address.
 
 ## Configuration
 
@@ -220,7 +215,7 @@ All settings live in `.env`; see [`.env.example`](.env.example) for descriptions
 - [Events](docs/events.md) — group rides, races, power sharing, events file
 - [Vehicles](docs/vehicles.md) — tandems and beer bikes, codes, captain, bots
 - [Workouts](docs/workouts.md) — café circuits, presets, exercises, history
-- [Devices](docs/devices.md) — FTMS, heart rate, Zwift Click/Play/Ride controllers
+- [Devices](docs/devices.md) — the server's bike, the simulated trainer, phone paddles
 - [Routes](docs/routes.md) — route file format
 - [Deploying](docs/deploy.md) — production behind a reverse proxy, Strava, limits
 - [Decisions](docs/adr/) — architecture decision records

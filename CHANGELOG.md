@@ -7,8 +7,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- The server decides what riders connect in the browser: with a bike of its own offered (e.g. the `bike` server feature), the standard is no Web Bluetooth UX at all — the trainer card becomes "Server's bike", the chooser, heart-rate and controller rows and the Bluetooth warnings go (the operator's `OPENRADLR_CLIENT_DEVICES=on` brings them back for a household that mixes both). `/api/info` says the verdict in the additive `client_devices` field; servers without a bike always offer client devices.
-
 - The server can ride a bike of its own: with the `bike` cargo feature and `OPENRADLR_BIKE=yesoul`, it connects to a Yesoul S3 spin bike over its own Bluetooth adapter and streams power, cadence, resistance and distance to one riding client — no Web Bluetooth needed, so any browser in the house (a phone without Bluetooth support included) can ride the bike standing next to the server. The start menu offers "Ride the server bike" when the server has one; one rider at a time, and the rider coming back after a dropped connection claims it again. Silence reads as zero after 2 s, a lost bike reconnects; see ADR 0020.
 
 - A rider who sits at 0 W for 30 minutes gets a "Still riding?" warning with Stay and Leave now, two minutes to answer. Stay gives three more reminders 10 minutes apart, then a final one with Leave now only; no answer removes the rider, so an idle rider no longer holds a seat. Pedalling resets the clock, and workouts are exempt. `OPENRADLR_AFK_TIMEOUT_S=0` turns it off. Outcomes are counted in `openradlr_afk_events_total`.
@@ -26,33 +24,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- Web Bluetooth in the browser: the client no longer connects to smart trainers, heart rate straps or Zwift controllers itself. Riders ride the server's own bike (see the `bike` feature above), the simulated trainer or phone paddles; the start menu's device chooser, heart-rate and controller rows, reconnect buttons and Bluetooth warnings are gone, and `/api/info` no longer reports a `client_devices` field.
+
 - The Docker deployment path: `Dockerfile`, `docker-compose.yml`, the bundled Caddy and landing containers and the `make up` / `down` / `update` targets are gone, and the Makefile no longer runs cargo/npm in throwaway containers when they are missing — install Rust and Node on the host. Run the release binary directly behind your own reverse proxy; see [docs/deploy.md](docs/deploy.md).
 
 ### Fixed
 - The Yesoul S3 never accepted the server's handshake: the bike answers the init packet written **with** response with its vendor ATT error 0x20 and stays silent (probed against the real bike, missing from the earlier bridge-based doc). The link now subscribes to the telemetry notifications first and writes the init packet without response; pairing takes no part (the bike ignores pairing attempts). The failing handshake also retried at scan speed, hammering the bike — the reconnect pause now applies between attempts.
 - The server's bike link came up never: the scan–reconnect loop started a new BLE scan on every cycle, and BlueZ answers a start while it is already scanning with "Operation already in progress" — the retry treated that as a fatal error and so never reached the point where the bike is looked for. A scan start that finds one already running is kept now.
-- A browser without Web Bluetooth (or over plain http on the LAN) was steered to phone paddles and never showed the trainer card, so "Ride the server bike" stayed invisible even with a server bike offered: with one offered, the trainer panel is now the way in without browser Bluetooth, and the "can't reach Bluetooth trainers" warning stays quiet while the server rides its bike.
 - A failed network request no longer leaves the app as text and pictures only: when the server couldn't be reached, the offline fallback served the start page's HTML for every script, style and image, so every module failed with a MIME-type error and nothing started. Only page navigations fall back to the cached shell now; anything else reports its real network error.
 - Name labels no longer float over houses and hills: a rider out of sight (the GPU checks each one) has no label, with a short delay so labels don't flicker at an edge. Labels point at their rider with a small tail and get smaller and fainter with distance (#15).
 - A finished ride is no longer stored twice in the ride history when it was finished, continued and finished again (#19).
-- Shifting with a two-piece Zwift Click (v2) keeps working past the first minute. Zwift's firmware locks the left half's plain button messages about a minute after connecting unless the Zwift app unlocked it; OpenRadlr now notices the lock and restarts that half, and while it restarts, B on the right half shifts down. The right half never locks, so with it alone + shifts up and B shifts down.
-- Both Click halves can be connected, whichever comes first: their presses are merged into one stream, so a press that one half relays for the other shifts once, and quick + then − is two shifts.
-- A Click that falls asleep is found again within seconds (it advertises only briefly when woken), and a reconnect attempt that hangs gives up after 15 s instead of ending all reconnects.
-- A menu opened with the mouse during a ride no longer turns the Click's shifters into menu navigation; a menu opened with the Click (+ and − together) is still navigated with it.
-- Controller navigation in the start menu goes on from where the focus is (e.g. the button just clicked to pair), and skips the build label and privacy link.
-- The device report traces each controller press to its result ("Zwift Click → shiftDown (riding)", "Gear 12 → 11", or why a shift was ignored), notes window and tab switches, and with `?debug=controller` keeps every controller packet.
 
 ### Fixed
-- A trainer held by another app (Zwift, its own app) is shown as "resistance blocked" with what to do, instead of looking connected while resistance never follows the road; OpenRadlr asks for control again every 10 s.
-- Connecting no longer hangs on "Connecting…": every attempt gives up after 15 s, and Chrome's often failing first connect is retried.
-- Connect errors say what to try ("Is it awake, and free of other apps?") instead of the browser's message.
 - The trainer's live check says whether data arrives ("Connected · pedal to check", "✓ 182 W · 88 rpm", "No data for 7 s").
-- The reconnect line shows the remembered trainer's name instead of squeezing it to "N…"; the gear fields only show with a trainer that can shift.
 - The start menu's panel is solid (it could render see-through in Chrome).
-- Device lines have one main action (Reconnect a remembered device, else connect, change or add another) and no longer wrap; the controller check names the button pressed ("✓ Zwift Click: shift up (+)").
-- Virtual shifting no longer goes missing for a whole ride when the trainer gives control a few seconds after Ride was pressed: rides plan gears and ERG on what the trainer can do once it has control, and the HUD says "Resistance blocked" while it hasn't.
-- A two-piece Zwift Click pairs like a pair: after one half the button reads "Add other half", each half is named by its side ("Zwift Click − 70 % · + 68 %"), the check confirms + and − one by one, and picking the half that's already connected says to pick the other one.
-- Virtual shifting's gear is one line ("Chain on 34 × 14 teeth"); the device report counts a controller's idle messages, so it shows whether a controller sends anything at all.
+- Virtual shifting's gear is one line ("Chain on 34 × 14 teeth").
 
 ### Changed
 - "Trainer difficulty" is now "Climb feel", explained, in Settings and the ride menu.

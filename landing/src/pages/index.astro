@@ -32,7 +32,7 @@ const features = [
   },
   {
     title: "Virtual shifting",
-    text: "Gears for single-speed setups like the Zwift Cog. Shift from the keyboard, the screen or a Zwift Click, Play or Ride.",
+    text: "Gears for single-speed setups. Shift from the keyboard or the screen.",
   },
   {
     title: "Strava upload",
@@ -55,11 +55,11 @@ const faq = [
   },
   {
     q: "Does it work on an iPhone or iPad?",
-    a: "Safari on iOS can’t talk to Bluetooth devices. The free Bluefy browser can: open the app there. Chrome or Edge on Android, Windows, macOS and ChromeOS work out of the box.",
+    a: "Yes. The browser never talks to Bluetooth itself — the server's bike reaches the app through the server — so any browser rides, Safari included.",
   },
   {
-    q: "I don’t have a smart trainer. Can I still try it?",
-    a: "Yes. Pick Simulated trainer on the start screen and set your power with the arrow keys. A power meter on a classic trainer works too, without resistance control.",
+    q: "I don't have a bike. Can I still try it?",
+    a: "Yes. Pick Simulated trainer on the start screen and set your power with the arrow keys.",
   },
   {
     q: "Who are the other riders?",
@@ -84,7 +84,7 @@ const faq = [
     <div class="wrap hero-text">
       <h1 id="hero-title">Free indoor cycling, together.</h1>
       <p class="lede">
-        Connect your smart trainer, open the browser and ride an island world with friends, strangers and bots.
+        Ride the bike standing next to the server, open the browser and ride an island world with friends, strangers and bots.
         Open source, no subscription.
       </p>
       <div class="actions">
@@ -150,22 +150,23 @@ const faq = [
       </div>
       <ol class="steps">
         <li>
-          <h3>A smart trainer or a power meter</h3>
+          <h3>A bike the server can reach</h3>
           <p>
-            Anything that speaks Bluetooth FTMS or Cycling Power, like a Wahoo KICKR Core or a Van Rysel D500. A heart
-            rate strap is optional. <a href={devicesUrl}>Which devices work</a>
+            The server connects to a bike over its own Bluetooth adapter — for example a Yesoul S3 — and any browser in
+            the house rides it. No smart trainer hardware in your browser needed. <a href={devicesUrl}>Which devices work</a>
           </p>
         </li>
         <li>
-          <h3>Chrome or Edge</h3>
+          <h3>Any browser</h3>
           <p>
-            On Windows, macOS, Android or ChromeOS, for Web Bluetooth. On iPhone and iPad, use the Bluefy browser.
+            The client never talks to Bluetooth itself, so Chrome, Safari and Firefox all ride — on a laptop, tablet or
+            phone.
           </p>
         </li>
         <li>
           <h3>A name</h3>
           <p>
-            Open <a href={site.appUrl}>{appHost}</a>, type a name, connect your trainer and pick a route. No sign-up.
+            Open <a href={site.appUrl}>{appHost}</a>, type a name, ride the server's bike and pick a route. No sign-up.
           </p>
         </li>
       </ol>

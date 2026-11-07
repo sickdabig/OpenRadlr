@@ -187,10 +187,9 @@ test("a picker needs at least two cards: a single route or the studio stands alo
   assert.equal(showsCards("events", routes), false);
 });
 
-test("the workout card keeps the devices heading only for the heart-rate row, which needs Bluetooth", () => {
-  assert.equal(devicesVisible({ kind: "workout" }, true), true);
-  assert.equal(devicesVisible({ kind: "workout" }, false), false);
-  assert.equal(devicesVisible({ id: "x" }, false), true);
+test("the workout card keeps no devices heading: nothing left to connect there", () => {
+  assert.equal(devicesVisible({ kind: "workout" }), false);
+  assert.equal(devicesVisible({ id: "x" }), true);
 });
 
 test("the privacy link comes from the server, only as a web address", () => {

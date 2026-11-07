@@ -103,10 +103,6 @@ pub struct Config {
     pub privacy_url: Option<String>,
     /// A bike the server itself connects to over Bluetooth (`OPENRADLR_BIKE`), if any.
     pub bike: Option<BikeKind>,
-    /// Riders may connect their own devices in the browser (`OPENRADLR_CLIENT_DEVICES`).
-    /// Off by default: a server with a bike of its own offers the collapsed UX;
-    /// `/api/info` also counts a bike as reason to keep `client_devices` on.
-    pub allow_client_devices: bool,
 }
 
 /// The bike models the server can connect to over Bluetooth (`OPENRADLR_BIKE`).
@@ -468,7 +464,6 @@ impl Config {
             analytics,
             privacy_url,
             bike,
-            allow_client_devices: reader.flag("OPENRADLR_CLIENT_DEVICES", false)?,
         })
     }
 
@@ -581,25 +576,6 @@ mod tests {
         let e = config(&[("OPENRADLR_BIKE", "kickr")]).unwrap_err();
         assert_eq!(e.key, "OPENRADLR_BIKE");
         assert_eq!(e.value, "kickr");
-    }
-
-    #[test]
-    fn client_devices_are_off_unless_the_operator_turns_them_on() {
-        // Standard: the server's own bike needs no devices in the browser.
-        assert!(!config(&[]).unwrap().allow_client_devices);
-        assert!(
-            !config(&[("OPENRADLR_CLIENT_DEVICES", "off")])
-                .unwrap()
-                .allow_client_devices
-        );
-        assert!(
-            config(&[("OPENRADLR_CLIENT_DEVICES", "on")])
-                .unwrap()
-                .allow_client_devices
-        );
-        let e = config(&[("OPENRADLR_CLIENT_DEVICES", "maybe")]).unwrap_err();
-        assert_eq!(e.key, "OPENRADLR_CLIENT_DEVICES");
-        assert_eq!(e.reason, "must be true or false");
     }
 
     #[test]

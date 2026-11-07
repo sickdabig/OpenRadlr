@@ -83,8 +83,6 @@ pub struct AppState {
     pub bike: Option<Arc<crate::ble::BikeHub>>,
     pub allow_simulated_trainer: bool,
     pub allow_paddle_mode: bool,
-    /// Riders may connect their own devices in the browser (`OPENRADLR_CLIENT_DEVICES`).
-    pub allow_client_devices: bool,
     /// Community distance totals (#65).
     pub stats: DistanceStats,
     /// AFK warning counters, shared by all connections.
@@ -125,11 +123,6 @@ pub struct InfoResponse {
     pub simulated_trainer: bool,
     /// Whether riders may join with phone paddles (tapping for power).
     pub paddle_mode: bool,
-    /// Whether riders connect their own devices in the browser's Web
-    /// Bluetooth. A server with a bike of its own says no unless the
-    /// operator turned `OPENRADLR_CLIENT_DEVICES` on; without a bike there
-    /// is nothing else to ride, so always yes.
-    pub client_devices: bool,
     /// Analytics script the client loads; absent unless the operator enabled it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub analytics: Option<crate::config::Analytics>,
@@ -449,7 +442,6 @@ async fn info(State(state): State<AppState>) -> Json<InfoResponse> {
         studio: state.worlds.studio().map(|entry| StudioSummary::of(entry, now_s)),
         simulated_trainer: state.allow_simulated_trainer,
         paddle_mode: state.allow_paddle_mode,
-        client_devices: state.allow_client_devices || state.bike.is_none(),
         analytics: state.info.analytics.clone(),
         privacy_url: state.info.privacy_url.clone(),
         distance_m: {

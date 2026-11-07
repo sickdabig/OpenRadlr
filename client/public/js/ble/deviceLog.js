@@ -1,21 +1,12 @@
 /**
- * Diagnostics for Bluetooth devices: what was found, what was received, what failed.
- * Keeps a bounded log plus packet counters, and can render a copyable report
- * so riders can attach it to a bug report.
+ * Diagnostics for devices: what was received, what failed. Keeps a bounded log
+ * plus packet counters, and can render a copyable report so riders can attach
+ * it to a bug report.
  */
 import { Emitter } from "../util/emitter.js";
 
 export const toHex = (dataView) =>
   Array.from(new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength), (b) => b.toString(16).padStart(2, "0")).join(" ");
-
-/**
- * `?debug=controller` in the address: every controller packet goes into the report
- * (for decoding a controller we don't understand yet); the trainer's stay capped,
- * or their four packets a second would push the controller's out.
- */
-export function deviceLogOptions(search) {
-  return new URLSearchParams(search).get("debug") === "controller" ? { capture: ["zwift"], maxEntries: 3000 } : {};
-}
 
 export class DeviceLog extends Emitter {
   entries = [];
@@ -71,7 +62,6 @@ export class DeviceLog extends Emitter {
       `OpenRadlr device diagnostics`, // i18n-ok
       ...(extra.build ? [`Build: ${extra.build}`] : []), // i18n-ok
       `User agent: ${extra.userAgent ?? "unknown"}`, // i18n-ok
-      ...(extra.webBluetooth ? [`Web Bluetooth: ${extra.webBluetooth}`] : []), // i18n-ok
       `Packets: ${JSON.stringify(this.packets)}`, // i18n-ok
       ...(this.capture.size ? [`Capturing: ${[...this.capture].join(", ")} (every packet)`] : []), // i18n-ok
       "",

@@ -1,7 +1,7 @@
 /**
- * Keyboard controls. Every input device (keyboard, on-screen buttons and
- * controllers such as a Zwift Click, see input/controller.js) produces the same action names,
- * so the game only handles actions, never devices (see docs/devices.md).
+ * Keyboard controls. Every input device (keyboard and on-screen buttons)
+ * produces the same action names, so the game only handles actions, never
+ * devices (see docs/devices.md).
  */
 
 export const KEY_BINDINGS = Object.freeze({

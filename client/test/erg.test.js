@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { encodeSetTargetPower } from "../public/js/ble/ftms.js";
-import { SimulatedTrainer, SmartTrainer } from "../public/js/ble/devices.js";
+import { SimulatedTrainer } from "../public/js/ble/devices.js";
 import { RideSession } from "../public/js/ride/rideSession.js";
 import {
   PRESET_WORKOUTS,
@@ -17,25 +16,7 @@ import {
 } from "../public/js/ride/workout.js";
 import { Emitter } from "../public/js/util/emitter.js";
 import { fakeScheduler } from "./helpers.js";
-import { fakeTrainer } from "./fakeBluetooth.js";
-
-// --- FTMS ERG ---------------------------------------------------------------
-
-test("encodes FTMS Set Target Power", () => {
-  assert.deepEqual([...encodeSetTargetPower(250)], [0x05, 0xfa, 0x00]);
-  assert.deepEqual([...encodeSetTargetPower(-10)], [0x05, 0x00, 0x00]);
-  assert.deepEqual([...encodeSetTargetPower(1234.6)], [0x05, 0xd3, 0x04]);
-});
-
-test("grade and power commands share one queue; only the latest pending is sent", async () => {
-  const fake = fakeTrainer({ services: { 0x1826: { 0x2ad2: {}, 0x2ad9: {} } } });
-  const trainer = await SmartTrainer.connect(fake.bluetooth);
-  const control = fake.characteristics[0x2ad9];
-  control.writes.length = 0;
-  await Promise.all([trainer.setGrade(2), trainer.setTargetPower(180), trainer.setTargetPower(200)]);
-  assert.deepEqual(control.writes.map((w) => w[0]), [0x11, 0x05]);
-  assert.deepEqual(control.writes[1], [0x05, 200, 0]);
-});
+// --- ERG --------------------------------------------------------------------
 
 test("the simulated trainer holds the ERG target", async () => {
   const trainer = new SimulatedTrainer(fakeScheduler());

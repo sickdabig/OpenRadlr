@@ -4,14 +4,11 @@
  * modules, which are unit-tested; this file only connects them.
  */
 import { loadAnalytics } from "./analytics.js";
-import { DeviceLog, deviceLogOptions } from "./ble/deviceLog.js";
+import { DeviceLog } from "./ble/deviceLog.js";
 import { ServerBikeTrainer } from "./ble/serverBike.js";
-import { HeartRateMonitor, PaddleTrainer, SimulatedTrainer, SmartTrainer, canExportRide, couldControlResistance, deviceKind, hasRealPowerSource, isBluetoothAvailable } from "./ble/devices.js";
-import { KnownDevices, grantedDevices, whenInRange } from "./ble/knownDevices.js";
-import { addonsShown, bluetoothUnavailableReason, chooseRideMode, connectErrorText, controllerCheck, controllerLine, deviceActions, expectsOtherHalf, liveCheck, missingHalfHint, needsDownButton, remapForDown, rideModes } from "./view/deviceSetup.js";
-import { ZwiftController } from "./ble/zwiftController.js";
-import { ControllerInput, MergedControllers, controllerNavigates } from "./input/controller.js";
-import { activateFocused, focusableIn, moveFocus } from "./input/focusNav.js";
+import { PaddleTrainer, SimulatedTrainer, canExportRide, couldControlResistance, deviceKind, hasRealPowerSource } from "./ble/devices.js";
+import { chooseRideMode, liveCheck, rideModes } from "./view/deviceSetup.js";
+import { focusableIn } from "./input/focusNav.js";
 import { createMenuDialog } from "./view/menuDialog.js";
 import { viewControls } from "./view/viewControls.js";
 import { createViewPopover } from "./view/viewPopover.js";
@@ -79,7 +76,7 @@ import { drawRaceTimeline } from "./view/raceTimelineView.js";
 import { drawMapPreview } from "./view/mapPreview.js";
 import { MenuStage } from "./view/menuStage.js";
 import { BUILD } from "./build.js";
-import { buildLabel, communityDistance, pickRoute, renderRoutes, routesOf, serverStatus, stageHeadline, stageLede, stageStats, workoutRoute, devicesVisible, privacyUrl, serverName, joinAction, stravaLine, activityOf, activityTabs, pickForActivity, renderActivityTabs, routesFor, shownActivity, showsCards, clientDevices } from "./view/startMenu.js";
+import { buildLabel, communityDistance, pickRoute, renderRoutes, routesOf, serverStatus, stageHeadline, stageLede, stageStats, workoutRoute, devicesVisible, privacyUrl, serverName, joinAction, stravaLine, activityOf, activityTabs, pickForActivity, renderActivityTabs, routesFor, shownActivity, showsCards } from "./view/startMenu.js";
 import { PRESETS } from "./workout/presets.js";
 import { renderWorkoutCards } from "./view/workoutCards.js";
 import { WorkoutSession } from "./workout/workoutSession.js";
@@ -237,7 +234,7 @@ function buildRideWorld() {
 }
 
 const profiles = new ProfileStore();
-const deviceLog = new DeviceLog(deviceLogOptions(location.search));
+const deviceLog = new DeviceLog();
 /** Every open panel, so Esc closes the top one. */
 const panels = createPanelStack();
 let removeDrawerPanel = null;
@@ -254,10 +251,7 @@ const app = {
   workoutRowFigures: [],
   redrawStage: null,
   trainer: null,
-  heartRateMonitor: null,
-  /** Zwift Click / Play / Ride controllers (a Play pair is two). */
-  controllers: [],
-  /** Handlers of the current ride's actions, shared by keyboard and controllers. */
+  /** Handlers of the current ride's actions, shared by the keyboard. */
   actions: null,
   connection: null,
   session: null,
@@ -346,12 +340,6 @@ const app = {
   lastTrainerDataAt: null,
   /** The trainer's last reading, for the start menu's live check. */
   lastReading: null,
-  /** The open drawer was opened with the controller (+ and − together): its buttons navigate it. */
-  drawerByController: false,
-  /** All controllers' presses as one stream (MergedControllers), made with the first controller. */
-  controllerInput: null,
-  /** The last controller press that wasn't a shift, for the controller check. */
-  lastControllerPress: null,
   gearbox: null,
   training: null,
   /** The guided FTP ramp test of this ride (null outside a ride). */
@@ -566,12 +554,10 @@ async function offerFtp() {
 /** Device status lines that applyTranslations resets to their initial text. */
 function renderDeviceStatuses() {
   if (app.trainer) $("trainer-status").textContent = trainerLabel(app.trainer);
-  if (app.heartRateMonitor) $("hr-status").textContent = app.heartRateMonitor.label;
-  if (app.controllers.length) renderControllerStatus();
 }
 
 function initSetup() {
-  relocaliseHooks.push(renderUnits, showLevel, renderFtpSource, renderReconnectButtons, renderDeviceStatuses, renderWorkoutPick, renderStartMenu, renderServerBike, initBiomePicker);
+  relocaliseHooks.push(renderUnits, showLevel, renderFtpSource, renderDeviceStatuses, renderWorkoutPick, renderStartMenu, renderServerBike, initBiomePicker);
   document.addEventListener("click", (event) => {
     const button = event.target.closest?.("[data-lang]");
     if (button) changeLanguage(button.dataset.lang);
@@ -591,10 +577,6 @@ function initSetup() {
   showLevel();
   setDifficultyInputs(app.profile.difficulty);
   initWorkoutSetup();
-
-  // The server decides what riders connect here: renderRideModes collapses or
-  // opens the browser's peripheral rows and the Bluetooth warning per policy.
-  initKnownDevices();
 
   $("difficulty").addEventListener("input", (e) => setDifficultyInputs(e.target.value / 100));
   $("virtual-shifting").checked = app.profile.virtualShifting;
@@ -616,33 +598,6 @@ function initSetup() {
   $("connect-server-bike").addEventListener("click", () => {
     writeSetting(SERVER_BIKE_KEY, "1");
     useServerBike();
-  });
-  for (const kind of Object.keys(DEVICES)) {
-    // Connecting takes seconds on some phones; a second tap meanwhile would pair a controller twice.
-    const pick = async (button, names) => {
-      button.disabled = true;
-      // Name what's being looked for: the line's own label may be hidden in favour of the device name.
-      // With a controller connected already, the hint goes under the line: the connected half stays in view.
-      const adding = kind === "controller" && app.controllers.length > 0;
-      const pending = names?.length
-        ? t("setup.looking", { names: names.join(" + ") })
-        : adding && expectsOtherHalf(app.controllers)
-          ? t("setup.pickOtherHalf", { label: app.controllers[0].label })
-          : t("setup.pickYour", { what: CHOOSER_NAMES()[kind] });
-      const ok = await connectDevice(() => DEVICES[kind].connect(names), (device) => connected(kind, device), adding ? "controller-live" : DEVICES[kind].statusId, { keepLabel: true, deviceName: names?.[0] ?? null, pending });
-      if (adding && ok) renderControllerCheck();
-      button.disabled = false;
-      if (kind === "controller" && app.controllers.length) renderControllerStatus();
-      renderReconnectButtons();
-    };
-    $(`connect-${kind}`).addEventListener("click", (event) => pick(event.currentTarget));
-    // The chooser lists only the remembered devices: one tap and a confirm.
-    $(`reconnect-${kind}`).addEventListener("click", (event) => pick(event.currentTarget, missingDevices(kind).map((entry) => entry.name)));
-  }
-  // The strong controller focus ring only while a controller drives the focus.
-  window.addEventListener("pointerdown", () => {
-    document.documentElement.classList.remove("controller-nav");
-    app.drawerByController = false;
   });
   initDiagnostics();
   initStartVehicle();
@@ -960,7 +915,7 @@ function renderStartMenu() {
   $("workout-setup").hidden = !workout;
   $("routes-title").textContent = stageHeadline(selected, activity);
   $("routes-lede").textContent = stageLede(selected, activity);
-  $("devices").hidden = !devicesVisible(selected, webBle());
+  $("devices").hidden = !devicesVisible(selected);
   renderRideModes();
   // Vehicles are on the roads: no boarding from the workout card.
   $("board-start").hidden = workout;
@@ -1022,136 +977,18 @@ function joinEventFromRide(row) {
   if (leaveRide()) joinEventFromMenu(row);
 }
 
-/** @returns {Promise<boolean>} true once connected */
-async function connectDevice(connect, onConnected, statusId, { keepLabel = false, pending = t("devices.connecting"), deviceName = null } = {}) {
-  const status = $(statusId);
-  status.textContent = pending;
-  status.dataset.note = "pending";
-  status.classList.remove("ok");
-  try {
-    const device = await connect();
-    onConnected(device);
-    // useTrainer() writes its own label (it knows about power-only trainers).
-    if (!keepLabel) status.textContent = device.label;
-    delete status.dataset.note;
-    status.classList.add("ok");
-    return true;
-  } catch (error) {
-    // Given up quietly: the rider connected another device meanwhile.
-    if (error.name === "AbortError") {
-      delete status.dataset.note;
-      return false;
-    }
-    status.textContent = connectErrorText(error, deviceName);
-    status.dataset.note = "error";
-    if (error.name !== "NotFoundError") deviceLog.error(`Connecting failed: ${error.message}`);
-    return false;
-  }
-}
-
-// -------------------------------------------------------- known devices ---
-
-const knownDevices = new KnownDevices();
-const hasController = (id) => app.controllers.some((c) => c.id === id);
-
-/** Each kind of device: through the chooser (`names`: only these) or, already granted, without it. */
-const DEVICES = {
-  trainer: {
-    statusId: "trainer-status",
-    connect: (names) => SmartTrainer.connect(undefined, { log: deviceLog, names }),
-    open: (device) => SmartTrainer.open(device, { log: deviceLog }),
-    use: (trainer) => useTrainer(trainer),
-    has: () => Boolean(app.trainer),
-  },
-  hr: {
-    statusId: "hr-status",
-    connect: (names) => HeartRateMonitor.connect(undefined, { log: deviceLog, names }),
-    open: (device) => HeartRateMonitor.open(device, { log: deviceLog }),
-    use: (monitor) => useHeartRateMonitor(monitor),
-    has: () => Boolean(app.heartRateMonitor),
-  },
-  controller: {
-    statusId: "controller-status",
-    connect: (names) => ZwiftController.connect(undefined, { log: deviceLog, names, isConnected: (device) => hasController(device.id) }),
-    open: (device) => ZwiftController.open(device, { log: deviceLog }),
-    use: (controller) => useController(controller),
-    // Any trainer or strap will do; controllers count one by one (a Play is two).
-    has: (id) => hasController(id),
-  },
-};
-
-/** Remembered devices of `kind` that aren't connected now. */
-function missingDevices(kind) {
-  const entries = knownDevices.of(kind);
-  return kind === "controller" ? entries.filter((entry) => !hasController(entry.id)) : DEVICES[kind].has() ? [] : entries;
-}
-
-/** A device was picked or found again: remember it for the next start. */
-function connected(kind, device) {
-  knownDevices.remember(kind, device);
-  DEVICES[kind].use(device);
-  renderReconnectButtons();
-}
-
-/** What the browser's device window should list, for the line's hint while it is open. */
-const CHOOSER_NAMES = () => ({ trainer: t("setup.chooser.trainer"), hr: t("setup.chooser.hr"), controller: t("setup.chooser.controller") });
-
-/** What each device line says while nothing is connected or remembered. */
-const IDLE_STATUS = () => ({ trainer: t("setup.idle.trainer"), hr: t("setup.idle.hr"), controller: t("setup.idle.controller") });
-
-/** "Reconnect" next to each kind with a remembered device that isn't connected. */
-function renderReconnectButtons() {
-  for (const kind of Object.keys(DEVICES)) {
-    const button = $(`reconnect-${kind}`);
-    const names = [...new Set(missingDevices(kind).map((entry) => entry.name))];
-    button.hidden = !isBluetoothAvailable() || names.length === 0;
-    // The name goes in the status line, the button stays short: nothing gets squeezed to "N…".
-    button.textContent = t("devices.reconnectShort");
-    button.title = t("devices.reconnect", { names: names.join(" + ") });
-    const status = $(DEVICES[kind].statusId);
-    const idle = !DEVICES[kind].has() && !status.dataset.note && !(kind === "controller" && app.controllers.length);
-    if (idle) status.textContent = names.length ? names.join(" + ") : IDLE_STATUS()[kind];
-  }
-  // One main action per line: Reconnect a known device (the chooser then reads "Other"), else connect, change or add.
-  const connectedNow = { trainer: Boolean(app.trainer) && deviceKind(app.trainer) === "trainer", hr: Boolean(app.heartRateMonitor), controller: app.controllers.length > 0 };
-  for (const kind of Object.keys(DEVICES)) {
-    const reconnect = $(`reconnect-${kind}`);
-    const actions = deviceActions({ kind, connected: connectedNow[kind], remembered: !reconnect.hidden, otherHalf: kind === "controller" && expectsOtherHalf(app.controllers) });
-    reconnect.hidden = !actions.reconnect;
-    const connect = $(`connect-${kind}`);
-    connect.textContent = actions.other;
-    // The trainer's first connect is the main action of the card; add-ons stay quiet.
-    // The trainer's first connect is the card's main action; so is the missing half of a Click.
-    const main = (kind === "trainer" && actions.other === t("setup.action.connect")) || (kind === "controller" && lonelyHalfHint() !== null);
-    connect.className = main ? "primary-small" : "secondary small";
-    // A remembered or connected controller's name says what it is ("Zwift Click"): the generic label makes room.
-    $(`addon-${kind}`)?.classList.toggle("shows-device", actions.reconnect || (kind === "controller" && connectedNow.controller));
-    // Both halves of a pair are in: nothing more to add.
-    connect.hidden = kind === "controller" && app.controllers.length >= 2;
-  }
-}
-
-/** Riders connect devices in the browser: Web Bluetooth available, and the server offers them. */
-function webBle() {
-  return isBluetoothAvailable() && clientDevices(app.info);
-}
-
 /** The ride-mode cards and the panel of the chosen one; outside a ride the trainer follows the choice. */
 function renderRideModes() {
   const picked = pickRoute(routesOf(app.info), app.routeId);
-  const bluetooth = isBluetoothAvailable();
-  const onWeb = webBle();
   const modes = rideModes({ info: app.info, picked });
-  const mode = chooseRideMode(app.rideMode, modes, onWeb, { serverBike: Boolean(app.info?.bike) });
+  const mode = chooseRideMode(app.rideMode, modes);
   for (const card of document.querySelectorAll(".mode-card")) {
     const entry = modes.find((m) => m.id === card.dataset.mode);
     card.hidden = !entry;
     card.setAttribute("aria-checked", String(card.dataset.mode === mode));
     card.setAttribute("aria-disabled", String(!entry?.available));
     card.title = entry?.reason ?? "";
-    // The hint follows the server's stance (the trainer card reads
-    // "Server's bike" when the browser device UX is off): the key goes with
-    // the text, so a language switch doesn't undo it.
+    // The hint goes with the text, so a language switch doesn't undo it.
     const hint = card.querySelector("span[data-i18n]");
     if (hint && entry) {
       hint.textContent = entry.hint;
@@ -1162,37 +999,22 @@ function renderRideModes() {
   $("ride-mode-reason").hidden = !reason;
   $("ride-mode-reason").textContent = reason;
   for (const panel of document.querySelectorAll(".mode-panel")) panel.hidden = panel.dataset.for !== mode;
-  const addons = addonsShown(mode, onWeb, picked);
-  $("addon-hr").hidden = !addons.hr;
-  $("addon-controller").hidden = !addons.controller;
-  $("controller-live").hidden = !addons.controller || app.controllers.length === 0;
-  // The server's policy decides the browser's peripheral rows: the class hides
-  // the connect row and add-ons (CSS), the warning speaks only where it helps —
-  // a plain-http page hides Web Bluetooth even in Chrome, and the collapsed
-  // standard has nothing to warn about: the answer is "ride the server's bike".
-  $("profile-form").classList.toggle("no-bluetooth", !onWeb);
-  $("bluetooth-warning").hidden = bluetooth || !clientDevices(app.info);
-  if (!bluetooth && clientDevices(app.info)) {
-    // Say why: a non-secure page hides Web Bluetooth even in Chrome (and the
-    // fix — open it as localhost, or serve https — differs from "use Chrome").
-    $("bluetooth-warning-reason").textContent = t(bluetoothUnavailableReason({ secure: Boolean(globalThis.isSecureContext) }));
-  }
   // The bike line follows the info: it appears as soon as the server offers
   // one and goes when it's ridden; every menu render re-decides.
   renderServerBike();
   if (!app.ride && picked?.kind !== "workout") applyRideMode(mode);
 }
 
-/** Connects what the chosen mode rides with; switching back to the trainer looks for the known one. */
+/** Connects what the chosen mode rides with; the trainer mode is the server's bike. */
 function applyRideMode(mode) {
   const kind = app.trainer ? deviceKind(app.trainer) : null;
   if (mode === "paddles" && kind !== "paddle") useTrainer(new PaddleTrainer({ ftp: Number($("ftp").value) }));
   else if (mode === "sim" && kind !== "sim") useTrainer(new SimulatedTrainer());
-  else if (mode === "trainer" && (kind === "paddle" || kind === "sim")) {
+  else if (mode === "trainer" && kind !== "trainer") {
     dropTrainer();
-    initKnownDevices(["trainer"]);
-  } else return;
-  renderReconnectButtons();
+    writeSetting(SERVER_BIKE_KEY, "1");
+    useServerBike();
+  }
 }
 
 /** Under the trainer: waiting, still, the numbers, or no data any more (asleep, taken by another app). */
@@ -1257,47 +1079,6 @@ function showShiftingSettings() {
   $("difficulty-row").hidden = !climbFeelVisible({ shiftingOffered: offered, shiftingChecked: checked });
 }
 
-/**
- * On start: remembered devices that this site may use without the chooser
- * connect on their own, once they are switched on (#43). Browsers without
- * `getDevices()` get the Reconnect buttons only.
- */
-async function initKnownDevices(kinds = Object.keys(DEVICES)) {
-  renderReconnectButtons();
-  const known = knownDevices.list().filter((entry) => kinds.includes(entry.kind));
-  // A server that collapsed the browser device UX never auto-connects one:
-  // its riders ride the server's bike (remembered grants keep working by
-  // hand if the operator flips the policy back).
-  if (!webBle() || !known.length) return;
-  const found = await grantedDevices(known);
-  const support = typeof navigator.bluetooth.getDevices === "function" ? `getDevices() found ${found.length}` : "no getDevices() in this browser"; // i18n-ok (log)
-  deviceLog.info(`Remembered devices: ${known.map((e) => e.name).join(", ")} (${support})`);
-  for (const { entry, device } of found) autoConnect(entry, device);
-}
-
-async function autoConnect(entry, device) {
-  const spec = DEVICES[entry.kind];
-  const taken = () => (entry.kind === "controller" ? spec.has(entry.id) : spec.has());
-  if (taken()) return;
-  const ok = await connectDevice(
-    async () => {
-      await whenInRange(device);
-      const opened = await spec.open(device);
-      // Picked by hand meanwhile: that one stays.
-      if (taken()) {
-        opened.disconnect();
-        throw Object.assign(new Error("already connected"), { name: "AbortError" }); // i18n-ok
-      }
-      return opened;
-    },
-    (opened) => connected(entry.kind, opened),
-    spec.statusId,
-    { keepLabel: true, deviceName: entry.name, pending: entry.kind === "controller" ? t("devices.pressButtonOn", { name: entry.name }) : t("devices.looking", { name: entry.name }) },
-  );
-  // Two controllers share one status line: show the ones that made it.
-  if (!ok && entry.kind === "controller" && app.controllers.length) renderControllerStatus();
-}
-
 function trainerLabel(trainer) {
   if (trainer.controlBlocked) return t("devices.resistanceBlockedLabel", { label: trainer.label });
   return canControl(trainer) ? trainer.label : t("devices.powerOnlyLabel", { label: trainer.label });
@@ -1354,126 +1135,6 @@ function useTrainer(trainer) {
   });
 }
 
-function useHeartRateMonitor(monitor) {
-  app.heartRateMonitor?.disconnect();
-  app.heartRateMonitor = monitor;
-  const status = $("hr-status");
-  status.textContent = monitor.label;
-  status.classList.add("ok");
-  monitor.on("disconnected", () => {
-    status.textContent = t("devices.reconnecting");
-    status.classList.remove("ok");
-    notify(t("devices.trainerDisconnected", { label: monitor.label }), "error");
-  });
-  monitor.on("reconnected", () => {
-    status.textContent = monitor.label;
-    status.classList.add("ok");
-    notify(t("devices.isBack", { label: monitor.label }));
-  });
-}
-
-function useController(controller) {
-  // Every button it ever sent: tells a Click half's side (+ or −) and confirms it works.
-  controller.seen = new Set();
-  controller.connectedAt = now();
-  app.controllers.push(controller);
-  // A half that relays says so (battery, status) within a second; one that stays quiet sends only its own side.
-  setTimeout(() => {
-    renderControllerCheck();
-    renderReconnectButtons();
-  }, 3000);
-  // All controllers feed one stream: a Click's two halves may both report a press (one relays the other).
-  app.controllerInput ??= new MergedControllers(new ControllerInput());
-  $("controller-live").hidden = false;
-  renderControllerCheck();
-  controller.on("buttons", (pressed) => {
-    if (pressed.length) {
-      const known = controller.seen.size;
-      for (const button of pressed) controller.seen.add(button);
-      app.lastControllerPress = { label: controller.label, buttons: pressed };
-      renderControllerCheck();
-      // The first shift tells the half's side: the line names it.
-      if (controller.seen.size !== known) {
-        renderControllerStatus();
-        renderReconnectButtons();
-      }
-    }
-    const found = navigationRoot();
-    const screen = !found ? null : found.id === "setup" || found.id === "finish" ? found.id : "drawer";
-    const root = controllerNavigates({ screen, openedByController: app.drawerByController }) ? found : null;
-    // Riding without an unlocked left Click half (locked, rebooting or not connected): B shifts down.
-    const buttons = remapForDown(pressed, root === null && needsDownButton(app.controllers));
-    const actions = app.controllerInput.update(controller.id, buttons, root !== null);
-    // The whole chain in the device report: what the press did, and where (menu or ride).
-    if (actions.length) deviceLog.info(`${controller.label} → ${actions.join(", ")} (${root ? `navigating ${root.id}` : "riding"})`);
-    for (const action of actions) runAction(action);
-  });
-  controller.on("battery", renderControllerStatus);
-  controller.on("locked", (locked) => {
-    renderControllerCheck();
-    // Once per ride: why − moved to B, and that the half comes back by itself.
-    if (locked && app.ride && !app.ride.clickLockNoted) {
-      app.ride.clickLockNoted = true;
-      notify(t("devices.clickLocked", { label: controller.label }));
-    }
-  });
-  controller.on("disconnected", () => {
-    app.controllerInput.forget(controller.id);
-    renderControllerStatus();
-    notify(t("devices.controllerDisconnected", { label: controller.label }), "error");
-  });
-  controller.on("reconnected", () => {
-    renderControllerStatus();
-    notify(t("devices.isBack", { label: controller.label }));
-  });
-  renderControllerStatus();
-}
-
-function renderControllerStatus() {
-  const status = $("controller-status");
-  status.textContent = controllerLine(app.controllers);
-  status.classList.toggle("ok", app.controllers.every((c) => c.connected));
-}
-
-/** Under the controller line: + and − confirmed one by one, or which Click half is missing. */
-function renderControllerCheck() {
-  const check = $("controller-live");
-  const missing = lonelyHalfHint();
-  const seen = new Set(app.controllers.flatMap((c) => [...c.seen]));
-  check.textContent = missing ?? controllerCheck({ seen, last: app.lastControllerPress ?? null });
-  check.dataset.state = missing ? "silent" : seen.size ? "live" : "";
-  delete check.dataset.note;
-}
-
-/** A lone Click half that has had time to say it relays, and hasn't. */
-function lonelyHalfHint() {
-  const settled = app.controllers.every((c) => now() - c.connectedAt > 2.5);
-  return settled ? missingHalfHint(app.controllers) : null;
-}
-
-/** Whatever the rider navigates with a controller right now; null while riding. */
-function navigationRoot() {
-  if (!$("finish").hidden) return $("finish");
-  for (const id of ["menu", "social"]) if (!$(id).hidden) return $(id);
-  if (!$("setup").hidden) return $("setup");
-  return null;
-}
-
-/** Runs an action from a controller: menu navigation here, the rest like the keyboard. */
-function runAction(action) {
-  // A menu the controller opens is navigated with it; one opened by mouse or touch is not.
-  if (action === "toggleMenu") app.drawerByController = true;
-  const root = navigationRoot();
-  if (action === "focusNext" || action === "focusPrev") {
-    document.documentElement.classList.add("controller-nav");
-    if (root) moveFocus(root, action === "focusNext" ? +1 : -1);
-  } else if (action === "select") {
-    if (root) activateFocused(root);
-  } else {
-    app.actions?.[action]?.();
-  }
-}
-
 /** A message for the rider: kept in the feed drawer and shown briefly on the HUD. */
 function notify(text, kind = "event") {
   appendFeed($("feed"), text, kind);
@@ -1488,12 +1149,6 @@ function notify(text, kind = "event") {
 }
 
 // ---------------------------------------------------------- diagnostics ---
-
-/** For the report: was Web Bluetooth reachable here, and if not, why not. */
-function webBluetoothNote() {
-  if (isBluetoothAvailable()) return "available"; // i18n-ok
-  return globalThis.isSecureContext ? "unavailable: this browser has no Web Bluetooth" : "unavailable: insecure origin (needs https or localhost)"; // i18n-ok
-}
 
 function initDiagnostics() {
   $("build-label").addEventListener("click", () => {
@@ -1510,7 +1165,6 @@ function initDiagnostics() {
     $("diagnostics-log").textContent = deviceLog.report({
       userAgent: navigator.userAgent,
       build: buildLabel(app.info, BUILD).details,
-      webBluetooth: webBluetoothNote(),
     });
     const total = Object.values(deviceLog.packets).reduce((sum, n) => sum + n, 0);
     $("trainer-packets").textContent = total ? tn("diagnostics.packets", total) : "";
@@ -1529,7 +1183,7 @@ function initDiagnostics() {
   deviceLog.on("packet", schedule);
 
   const copy = async (button) => {
-    const text = deviceLog.report({ userAgent: navigator.userAgent, webBluetooth: webBluetoothNote() });
+    const text = deviceLog.report({ userAgent: navigator.userAgent });
     try {
       await navigator.clipboard.writeText(text);
       button.textContent = t("diagnostics.copied");
@@ -1678,7 +1332,6 @@ async function joinRide(restored = null) {
   app.session = new RideSession({
     connection,
     trainer: app.trainer,
-    heartRateMonitor: app.heartRateMonitor,
     flat: Boolean(app.studio),
     resistanceModel: (roadGrade) => {
       // The road (flat in the studio: no grades arrive), with virtual gears if on.
@@ -1751,8 +1404,7 @@ function learnLevel() {
 
 /**
  * Ends the ride (or a join that failed) and shows the menu again, without
- * reloading the page: a reload would drop every Bluetooth device (#43).
- * Trainer, heart rate monitor and controllers stay connected.
+ * reloading the page. The trainer stays connected.
  */
 function endRide() {
   const ride = app.ride;
@@ -2199,11 +1851,6 @@ function startWorkout() {
   app.workoutCue = createCue({
     audioContext: app.workoutAudio,
     vibrate: navigator.vibrate ? (ms) => navigator.vibrate(ms) : null,
-  });
-  app.workoutUnsubscribe = app.heartRateMonitor?.on("data", ({ heartRate }) => {
-    if (!Number.isFinite(heartRate)) return;
-    app.workoutHeartRate = heartRate;
-    app.workout?.heartRate(heartRate);
   });
   app.wakeLock.acquire();
 

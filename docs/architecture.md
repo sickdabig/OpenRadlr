@@ -6,18 +6,16 @@ server they like. Central services (accounts, server directory) are optional
 and come after the proof of concept.
 
 ```text
- Trainer / HR strap / Click
-          │ Bluetooth LE
-          ▼
- ┌──────────────────────┐   WebSocket (JSON)   ┌───────────────────────────────┐
- │ Browser client       │ ───────────────────► │ openradlr-server               │
- │ devices · 2D views   │ ◄─────────────────── │ http · connection · runtime   │
- └──────────────────────┘                      │ game core                     │
-                                               │ ┌───────────────────────────┐ │
-                                               │ │ openradlr-sim (pure Rust)  │ │
-                                               │ │ world · physics · bots    │ │
-                                               │ └───────────────────────────┘ │
-                                               └───────────────────────────────┘
+ ┌─────────────────────┐   WebSocket (JSON)   ┌───────────────────────────────┐
+ │ Browser client      │ ────────────────────► │ openradlr-server              │
+ │ 2D views            │ ◄──────────────────── │ http · connection · runtime   │
+ └─────────────────────┘                       │ game core                     │
+                                               │ ┌─────────────────────────┐ │
+        │ Bluetooth LE                         │ │ openradlr-sim (pure Rust)  │ │
+        ▼                                      │ │ world · physics · bots    │ │
+ ┌─────────────┐                               │ └─────────────────────────┘ │
+ │ Server bike │ ────────────────────────────► └───────────────────────────────┘
+ └─────────────┘
 ```
 
 ## Server layers
