@@ -5,6 +5,7 @@
  */
 import { loadAnalytics } from "./analytics.js";
 import { DeviceLog, deviceLogOptions } from "./ble/deviceLog.js";
+import { ServerBikeTrainer } from "./ble/serverBike.js";
 import { HeartRateMonitor, PaddleTrainer, SimulatedTrainer, SmartTrainer, canExportRide, couldControlResistance, deviceKind, hasRealPowerSource, isBluetoothAvailable } from "./ble/devices.js";
 import { KnownDevices, grantedDevices, whenInRange } from "./ble/knownDevices.js";
 import { addonsShown, chooseRideMode, connectErrorText, controllerCheck, controllerLine, deviceActions, expectsOtherHalf, liveCheck, missingHalfHint, needsDownButton, remapForDown, rideModes } from "./view/deviceSetup.js";
@@ -115,6 +116,7 @@ const BIOME_KEY = "openride.biome";
 const LAYOUT_KEY = "openride.layout";
 const ROUTE_KEY = "openride.route";
 const RIDE_MODE_KEY = "openride.rideMode";
+const SERVER_BIKE_KEY = "openride.serverBike";
 const STUDIO_CAMERA_KEY = "openradlr.studio-camera";
 const COACH_VOICE_KEY = "openradlr.coach-voice";
 const INFO_REFRESH_MS = 5000;
@@ -569,7 +571,7 @@ function renderDeviceStatuses() {
 }
 
 function initSetup() {
-  relocaliseHooks.push(renderUnits, showLevel, renderFtpSource, renderReconnectButtons, renderDeviceStatuses, renderWorkoutPick, renderStartMenu, initBiomePicker);
+  relocaliseHooks.push(renderUnits, showLevel, renderFtpSource, renderReconnectButtons, renderDeviceStatuses, renderWorkoutPick, renderStartMenu, renderServerBike, initBiomePicker);
   document.addEventListener("click", (event) => {
     const button = event.target.closest?.("[data-lang]");
     if (button) changeLanguage(button.dataset.lang);
@@ -617,6 +619,10 @@ function initSetup() {
       renderRideModes();
     });
   }
+  $("connect-server-bike").addEventListener("click", () => {
+    writeSetting(SERVER_BIKE_KEY, "1");
+    useServerBike();
+  });
   for (const kind of Object.keys(DEVICES)) {
     // Connecting takes seconds on some phones; a second tap meanwhile would pair a controller twice.
     const pick = async (button, names) => {
@@ -750,6 +756,8 @@ function openStartMenu() {
       app.info = response.ok ? await response.json() : null;
       app.infoAt = Date.now();
       loadAnalytics(app.info, document);
+      // A remembered server bike starts on its own as soon as the server offers one again.
+      if (app.info?.bike && readSetting(SERVER_BIKE_KEY) && !app.trainer && !app.ride) useServerBike();
     } catch {
       app.info = null;
     }
@@ -1177,6 +1185,7 @@ function renderLiveCheck() {
 
 /** No trainer: the smart trainer card waits for one. */
 function dropTrainer() {
+  if (app.trainer instanceof ServerBikeTrainer) writeSetting(SERVER_BIKE_KEY, "");
   app.trainer?.disconnect();
   app.trainer = null;
   $("trainer-status").textContent = t("setup.idle.trainer");
@@ -1186,6 +1195,35 @@ function dropTrainer() {
   $("power-only-note").hidden = true;
   $("virtual-shifting-row").hidden = true;
   showShiftingSettings();
+  renderServerBike();
+}
+
+// ------------------------------------------------- bike on the server ---
+
+/** The display name of a server bike kind (`yesoul` → Yesoul S3). */
+function bikeName(kind) {
+  return { yesoul: "Yesoul S3" }[kind] ?? kind;
+}
+
+/** The server offers its own Bluetooth bike: a line under the trainer, shown while no trainer is picked. */
+function renderServerBike() {
+  const bike = app.info?.bike;
+  $("server-bike-hint").textContent = bike ? t("start.serverBikeHint", { bike: bikeName(bike.kind) }) : "";
+  $("server-bike-line").hidden = !bike || Boolean(app.trainer);
+}
+
+/** Uses the bike the server itself is connected to (ADR 0020). */
+function useServerBike() {
+  const bike = app.info?.bike;
+  if (!bike || app.trainer) return;
+  useTrainer(new ServerBikeTrainer({ label: t("devices.serverBikeLabel", { bike: bikeName(bike.kind) }) }));
+  renderServerBike();
+}
+
+/** Riding the server's bike: claim it after every join, the claim dies with the connection. */
+function claimServerBike(connection) {
+  if (!(app.trainer instanceof ServerBikeTrainer)) return;
+  connection.useBike();
 }
 
 /** Gear settings show while virtual shifting is offered and on; Climb feel then hides (#22). */
@@ -1588,6 +1626,7 @@ async function joinRide(restored = null) {
     resumeToken: restored?.snapshot.resumeToken,
     resume: restored && route?.kind !== "studio" ? restored.snapshot.resumePoint : null,
   });
+  claimServerBike(connection);
   closeMenuStage(route?.kind === "studio" ? null : route?.id);
   if (app.pendingEventId) {
     connection.joinEvent(app.pendingEventId);
@@ -1848,6 +1887,9 @@ function wireConnection(connection) {
     if (text) notify(text);
   });
   on("chat", ({ name, text }) => notify(`${name}: ${text}`, "chat"));
+  // Readings of the bike the server itself rides (ADR 0020); the trainer
+  // translates them into the same feed a Web Bluetooth trainer gives.
+  on("bike", (message) => app.trainer?.onBike?.(message));
   on("afk_warning", (warning) => {
     app.afkPrompt?.open(warning);
     // Show it now, not on the next frame, so focus can land on a visible button.
@@ -2663,6 +2705,7 @@ async function rejoin(lost) {
       resumeToken: lost.resumeToken,
       resume: app.studio || app.workout ? null : app.lastOnRoute,
     });
+    claimServerBike(connection);
     return { connection, riderId, close: () => connection.close() };
   } catch (error) {
     connection.close();

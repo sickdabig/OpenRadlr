@@ -51,13 +51,15 @@ export const ClientMessages = Object.freeze({
   pause: () => ({ type: "pause" }),
   /** Answers an AFK warning: the rider is still riding (server: `afk_warning`). */
   stay: () => ({ type: "stay" }),
+  /** Rides the bike the server itself connected to (server: `bike` messages). */
+  useBike: () => ({ type: "use_bike" }),
   resume: () => ({ type: "resume" }),
   chat: (text) => ({ type: "chat", text }),
   /** Leaving on purpose: the server removes the rider at once. */
   leave: () => ({ type: "leave" }),
 });
 
-const SERVER_TYPES = new Set(["welcome", "joined", "state", "studio_state", "resistance", "event", "chat", "error", "afk_warning"]);
+const SERVER_TYPES = new Set(["welcome", "joined", "state", "studio_state", "resistance", "event", "chat", "bike", "error", "afk_warning"]);
 
 /**
  * Parses a server frame. Returns null for anything that is not a known message.

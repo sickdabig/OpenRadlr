@@ -130,6 +130,11 @@ export class GameConnection extends Emitter {
     this.#send(ClientMessages.stay());
   }
 
+  /** Asks to ride the bike the server itself connected to (ADR 0020). */
+  useBike() {
+    this.#send(ClientMessages.useBike());
+  }
+
   /** Picks the road for the next junction (`null`: stay on the route). */
   turn(edge) {
     this.#send(ClientMessages.turn(edge));

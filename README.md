@@ -187,6 +187,7 @@ All settings live in `.env`; see [`.env.example`](.env.example) for descriptions
 | `OPENRADLR_ALLOW_SIMULATED_TRAINER` | `true` | Offer the simulated trainer (set `false` in production) |
 | `OPENRADLR_ALLOW_PADDLE_MODE` | `true` | Offer phone paddles (tap left/right for power; no Strava, no ride files) |
 | `OPENRADLR_PRIVACY_URL` | – | Link to your privacy policy in the start menu |
+| `OPENRADLR_BIKE` | – | A bike the server itself rides over Bluetooth (`yesoul` for the S3); needs a build with `--features bike` near the bike, BlueZ and libdbus — see [devices](docs/devices.md#yesoul-s3-on-the-server) |
 | `OPENRADLR_ANALYTICS_DOMAIN` / `_SCRIPT` | – | Opt-in Plausible analytics for the client: your site name, and the script URL if you self-host Plausible (off when the domain is empty) |
 | `OPENRADLR_STUDIO` | `true` | Host the spin studio (group classes) next to the routes |
 | `OPENRADLR_EVENTS` | `default` | Scheduled events: `default`, `off` or the path of an events file ([events](docs/events.md)) |

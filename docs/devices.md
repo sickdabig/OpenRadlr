@@ -37,6 +37,34 @@ implement the standards differently:
 5. Grade writes never overlap (one GATT operation at a time); only the latest
    pending grade is written.
 
+## Yesoul S3 on the server
+
+A server built with the `bike` cargo feature and started with
+`OPENRADLR_BIKE=yesoul` connects to a Yesoul S3 spin bike over **its own**
+Bluetooth adapter — no Web Bluetooth, so any OpenRadlr client in the house
+can ride it, a phone without Bluetooth support included. The protocol lives
+in [`yesoul-s3-protocol.md`](yesoul-s3-protocol.md); the pieces are the
+proprietary service `0xFFF0`, an init packet (`f5 20 20 40 f6`) written to
+`0xFFF1` with response **before** subscribing to the 12-byte notifications on
+`0xFFF4`, and ~1 Hz packets with power, cadence, resistance and a distance
+counter, all big-endian.
+
+The bike's connection is the server's business, the origin of the readings is
+honest-theft-proof: the client gets `bike` messages and rides them like any
+power-only trainer (the S3's brake knob is mechanical — no remote resistance).
+Silence works like the bridge's: over 2 s of quiet reads as zero, over 15 s
+(or 30 s after connecting without a single packet) drops and reconnects.
+
+**Using it.** The start menu shows a *Ride the server bike* line when
+`/api/info` offers a `bike`. One rider at a time: the first `use_bike` after
+joining claims it, a second rider is told it is busy, and whoever comes back
+after a dropped connection claims again. The choice is remembered per
+browser; the server keeps the bike connection across riders.
+
+Linux needs `bluetoothd` (BlueZ) running and `libdbus`; without the `bike`
+feature the server starts fine and answers `use_bike` with
+`bike_unavailable` (see [ADR 0020](adr/0020-server-side-ble.md)).
+
 ## Diagnostics
 
 The setup screen shows live power and cadence as soon as a trainer is

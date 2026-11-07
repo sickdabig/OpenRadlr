@@ -148,6 +148,13 @@
                   <button type="button" id="connect-trainer" class="primary-small" data-gesture-only data-i18n="start.connect">Connect</button>
                 </div>
                 <p id="live-reading" class="live-reading" aria-live="polite" hidden></p>
+                <!-- The server's own Bluetooth bike (ADR 0020): no browser Bluetooth involved -->
+                <div id="server-bike-line" class="device-line" hidden>
+                  <span class="device-dot" aria-hidden="true"></span>
+                  <!-- i18n-ok: set with the bike's name in renderServerBike -->
+                  <span id="server-bike-hint" class="device-status"></span>
+                  <button type="button" id="connect-server-bike" class="primary-small" data-i18n="start.serverBike">Ride the server bike</button>
+                </div>
                 <p id="power-only-note" class="field-hint" hidden></p>
                 <label id="virtual-shifting-row" class="check" hidden><input id="virtual-shifting" type="checkbox" /> <span data-i18n="start.virtualShifting">Virtual shifting</span> <span class="check-hint" data-i18n="start.zwiftCogOrOne">Zwift Cog or one fixed gear</span></label>
                 <!-- One line: the gear the chain really sits in; shifting happens in software from there -->

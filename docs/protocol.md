@@ -60,6 +60,7 @@ Workout riders are exempt.
 | `resume` | – | ride on after a pause |
 | `workout` | `exercise`: `squats` \| `situps` \| `pushups` \| `jumping_jacks` \| `plank` \| `burpees` \| `null` | the exercise being done now, or `null` for rest; only for a `workout` rider (others get `not_in_workout`, an unknown id `unknown_exercise`). A workout rider gets `in_workout` for `input`, `start_race`, `join_race`, `join_event`, `turn`, `create_vehicle`, `board_vehicle`, `pause` and `resume`; `telemetry` is ignored |
 | `chat` | `text` (≤ 200 chars) | at most 5 in a row, then one every 2 s |
+| `use_bike` | – | asks to ride [the bike the server itself connects to](#the-servers-own-bluetooth-bike), one rider at a time; after `join` (also after a reconnecting one) |
 | `leave` | – | leaving on purpose: the rider is removed at once and the server closes the connection |
 | `stay` | – | answer to an `afk_warning` that has `can_stay`; ignored when no warning is open or it is the final one. Leave now in that warning sends `leave` |
 
@@ -75,6 +76,7 @@ Workout riders are exempt.
 | `event` | `event` with a `kind` (see below) |
 | `afk_warning` | `leave_in_s` (the answer window), `can_stay` (false on the final warning) — see the paragraph on timeouts above |
 | `chat` | `rider_id`, `name`, `text` |
+| `bike` | `connected`, `power`, `cadence`, `resistance`, `distance_m` — a reading from [the server's own Bluetooth bike](#the-servers-own-bluetooth-bike), to the connection that claimed it with `use_bike`; all zeros while the bike is quiet, `connected` false between connections |
 | `error` | `code`, `message` |
 
 `riders[]` holds the riders on the server, whatever their route or distance, up
@@ -137,6 +139,25 @@ Game events (`event` message): `event_lobby` (`event_id`, `name`,
 `avg_wkg`, `given_kj` and `received_kj`. Event payloads use `event_kind`
 because `kind` names the event type.
 
+### The server's own Bluetooth bike
+
+A home server can stand next to the bike it serves: with
+`OPENRADLR_BIKE=yesoul` (and the `bike` cargo feature) the **server** connects
+to the Yesoul S3 over its own Bluetooth adapter and streams the ride to one
+client; see [ADR 0020](adr/0020-server-side-ble.md) and
+[devices](devices.md#yesoul-s3-on-the-server) for the bike side.
+
+A joined connection asks with `use_bike`; the first one wins and is the
+claimant for as long as it lives, a second gets `bike_busy`
+(`bike_unavailable` when no bike is configured or connected, e.g. built
+without the feature). The claim dies with the connection, so a rider who
+comes back (see [Reconnecting](#reconnecting)) asks again. The claimant gets
+a `bike` message as the bike reports (about 1 Hz while pedalling, zeros after
+2 s of quiet) and sends its readings on as ordinary `telemetry`; resistance
+and the bike's distance counter travel along for the display. The bike feeds
+no resistance control: the S3's brake knob is mechanical, so the client rides
+it like a power-only trainer.
+
 ### Shared vehicles
 
 `state.vehicle` is present while you sit in a vehicle ([vehicles](vehicles.md),
@@ -167,6 +188,7 @@ server turned the simulated trainer or phone paddles off), `chat_rate_limited`,
 belongs to another world; `message` is `route:<id>` to rejoin with), `not_captain`, `in_event` (seated riders can't join events or races and the other way round),
 `invalid_vehicle` (unsupported kind or seat count), `vehicle_rate_limited` (`create_vehicle` and `board_vehicle` share a slow per-connection limit: 3 at once, then one every 2 s), `already_aboard`, `in_vehicle` (joining an event while seated),
 `in_workout` (a riding message from a workout rider), `not_in_workout` (`workout` from a rider who did not join as one), `unknown_exercise`,
+`bike_unavailable` (no bike on this server, or built without the feature), `bike_busy` (another rider is on the bike),
 `afk_timeout` (no answer to an `afk_warning`; connection closed, rider removed without grace), `rate_limited` (connection closed), `handshake_timeout`, `idle_timeout`.
 
 ### Reconnecting
@@ -208,7 +230,7 @@ when `OPENRADLR_ALLOWED_ORIGINS` is set and the page's origin isn't listed, and
 | Route | Response |
 | --- | --- |
 | `GET /healthz` | `ok` |
-| `GET /api/info` | name, version, protocol version, auth mode, `players` (all routes, phone riders included), `phone_players` (of those, on phone paddles), `max_players` (seats for the others) and `max_phone_players` (seats for phone riders, counted apart), `routes[]` (`id`, `name`, `description`, `length_m`, `elevation_gain_m`, `players` riding it and `phone_players` among them; default first), `route` (the default, for older clients), `studio` (`id`, `name`, `players`, `class` and `next` with `class_id`, `name`, `starts_at_s`; missing when closed), `strava` (`enabled`, `required`), `privacy_url` (the operator's privacy policy; missing unless `OPENRADLR_PRIVACY_URL` is set), `analytics` (`domain`, `script`: the page analytics the client loads, #12; missing unless the operator set `OPENRADLR_ANALYTICS_DOMAIN`), `distance_m` (`trainer`, `paddle`: metres ridden on this server in total, see below), `now_s` (the server clock, Unix time) and `events[]` (soonest first: `id`, `name`, `kind`, `route_id`, `lobby_opens_at_s`, `starts_at_s`, `phase` `upcoming` \| `lobby` \| `running`, `entrants`) |
+| `GET /api/info` | name, version, protocol version, auth mode, `players` (all routes, phone riders included), `phone_players` (of those, on phone paddles), `max_players` (seats for the others) and `max_phone_players` (seats for phone riders, counted apart), `routes[]` (`id`, `name`, `description`, `length_m`, `elevation_gain_m`, `players` riding it and `phone_players` among them; default first), `route` (the default, for older clients), `studio` (`id`, `name`, `players`, `class` and `next` with `class_id`, `name`, `starts_at_s`; missing when closed), `strava` (`enabled`, `required`), `bike` (`kind`, `connected`; missing when no bike is configured, see [the server's own Bluetooth bike](#the-servers-own-bluetooth-bike)), `privacy_url` (the operator's privacy policy; missing unless `OPENRADLR_PRIVACY_URL` is set), `analytics` (`domain`, `script`: the page analytics the client loads, #12; missing unless the operator set `OPENRADLR_ANALYTICS_DOMAIN`), `distance_m` (`trainer`, `paddle`: metres ridden on this server in total, see below), `now_s` (the server clock, Unix time) and `events[]` (soonest first: `id`, `name`, `kind`, `route_id`, `lobby_opens_at_s`, `starts_at_s`, `phase` `upcoming` \| `lobby` \| `running`, `entrants`) |
 | `GET /api/route?id=…` | a route file (see [routes](routes.md)); the default route without `id`, 404 for unknown ids |
 | `GET /api/map?id=…` | a shared map's road network file, unchanged (see [routes](routes.md#road-networks)); 404 for maps without one |
 | `GET /api/studio` | the spin studio: `slot_s` (1800), `lobby_s` (300), `seats_per_room`, `classes[]` (`id`, `name`, `description`, `duration_s`, `segments[]` with `duration_s`, `from`/`to` as a fraction of FTP, `cadence` `[lo, hi]`, `cue`), `schedule[]` (the current slot and the next five: `class_id`, `name`, `starts_at_s`); 404 when the studio is closed |
@@ -247,6 +269,7 @@ Opt-in analytics (#12) added `analytics` to `/api/info` within version 2.
 Community distance counters (#65) added `distance_m` to `/api/info` within version 2.
 Physics calibration (#22) added `physics` to `joined` within version 2.
 AFK warnings added `afk_warning`, `stay` and `afk_timeout` within version 2.
+The server's own Bluetooth bike (ADR 0020) added `use_bike`, the `bike` message, the `bike_unavailable` and `bike_busy` errors and the `bike` field in `/api/info` within version 2.
 Reconnecting (#73) added `leave`, `resume_token` and `resume` in `join`,
 `resume_token` in `joined` and `grace_s` in `welcome` within version 2. An
 older client that never sends `leave` is kept for `grace_s` after it leaves.
