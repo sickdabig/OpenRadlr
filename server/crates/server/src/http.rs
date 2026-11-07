@@ -79,6 +79,8 @@ pub struct AppState {
     pub protection: Arc<Protection>,
     /// `None` when the server has no Strava API app configured.
     pub strava: Option<Arc<Strava>>,
+    /// The server's own Bluetooth bike, when one is configured (`ble`, ADR 0020).
+    pub bike: Option<Arc<crate::ble::BikeHub>>,
     pub allow_simulated_trainer: bool,
     pub allow_paddle_mode: bool,
     /// Community distance totals (#65).
@@ -106,6 +108,9 @@ pub struct InfoResponse {
     pub route: RouteSummary,
     pub routes: Vec<RouteSummary>,
     pub strava: StravaInfo,
+    /// The server's own Bluetooth bike, when one is configured (ADR 0020).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bike: Option<BikeInfo>,
     /// Server clock (Unix seconds), to read `events` against.
     pub now_s: f64,
     /// Scheduled events of all worlds, soonest start first.
@@ -140,6 +145,15 @@ pub struct StravaInfo {
     pub enabled: bool,
     /// Joining needs a connected Strava account.
     pub required: bool,
+}
+
+/// The server's own Bluetooth bike, in `/api/info` (ADR 0020).
+#[derive(Debug, Serialize)]
+pub struct BikeInfo {
+    /// The bike model, e.g. `yesoul`.
+    pub kind: String,
+    /// Whether the server currently has a connection to the bike.
+    pub connected: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -419,6 +433,10 @@ async fn info(State(state): State<AppState>) -> Json<InfoResponse> {
             enabled: state.strava.is_some(),
             required: state.strava.as_ref().is_some_and(|s| s.required),
         },
+        bike: state.bike.as_ref().map(|hub| BikeInfo {
+            kind: hub.kind().to_owned(),
+            connected: hub.snapshot().connected,
+        }),
         now_s,
         events,
         studio: state.worlds.studio().map(|entry| StudioSummary::of(entry, now_s)),

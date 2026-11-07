@@ -45,6 +45,8 @@ pub enum Action {
     },
     /// The rider answered an AFK warning with Stay.
     Stayed,
+    /// The rider wants to ride the server's Bluetooth bike (`use_bike`).
+    UseBike,
     /// Leave the game; the rider is removed and the connection is closed.
     Leave,
     Forward(PlayerCommand),
@@ -299,6 +301,7 @@ impl Session {
                     None => Action::Reply(ServerMessage::error("unknown_exercise", "no such exercise")),
                 },
             },
+            (Phase::Joined(_), ClientMessage::UseBike) => Action::UseBike,
             (Phase::Joined(_), ClientMessage::Leave) => Action::Leave,
             (Phase::Joined(_), ClientMessage::Chat { text }) => {
                 if self.chat.allow(now_s) {
@@ -637,6 +640,23 @@ mod tests {
         s.on_text(HELLO, 0.0);
         s.on_text(JOIN, 0.1);
         s.joined(1, DeviceKind::Trainer, 0.0);
+        s
+    }
+
+    #[test]
+    fn a_joined_rider_can_ask_to_ride_the_server_s_bike() {
+        let mut s = joined_session();
+        assert_eq!(s.on_text(r#"{"type":"use_bike"}"#, 0.2), Action::UseBike);
+    }
+
+    #[test]
+    fn a_use_bike_before_joining_is_refused() {
+        assert!(is_error(&s0().on_text(r#"{"type":"use_bike"}"#, 0.0), "join_required"));
+    }
+
+    fn s0() -> Session {
+        let mut s = session();
+        s.on_text(HELLO, 0.0);
         s
     }
 

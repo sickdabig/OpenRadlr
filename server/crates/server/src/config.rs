@@ -101,6 +101,24 @@ pub struct Config {
     pub analytics: Option<Analytics>,
     /// The operator's privacy policy, linked from the start menu (`OPENRADLR_PRIVACY_URL`).
     pub privacy_url: Option<String>,
+    /// A bike the server itself connects to over Bluetooth (`OPENRADLR_BIKE`), if any.
+    pub bike: Option<BikeKind>,
+}
+
+/// The bike models the server can connect to over Bluetooth (`OPENRADLR_BIKE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BikeKind {
+    /// The Yesoul S3 spin bike, proprietary BLE protocol (`docs/yesoul-s3-protocol.md`).
+    Yesoul,
+}
+
+impl BikeKind {
+    /// The machine-readable kind clients see in `/api/info`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            BikeKind::Yesoul => "yesoul",
+        }
+    }
 }
 
 /// A Plausible-compatible analytics script the client loads on request of the operator.
@@ -386,6 +404,20 @@ impl Config {
             )?;
         }
 
+        let bike = match reader.raw("OPENRADLR_BIKE").as_deref() {
+            None | Some("") => None,
+            Some(value) => match value.to_ascii_lowercase().as_str() {
+                "yesoul" => Some(BikeKind::Yesoul),
+                _ => {
+                    return Err(ConfigError {
+                        key: "OPENRADLR_BIKE",
+                        value: value.to_owned(),
+                        reason: "supported bikes: yesoul".into(),
+                    })
+                }
+            },
+        };
+
         Ok(Self {
             bind_addr: reader.parse("OPENRADLR_BIND", SocketAddr::from(([0, 0, 0, 0], 8080)))?,
             route_file: reader
@@ -431,6 +463,7 @@ impl Config {
             event_lobby_s,
             analytics,
             privacy_url,
+            bike,
         })
     }
 
@@ -528,6 +561,20 @@ mod tests {
         assert_eq!(c.auth_mode, AuthMode::Open);
         assert_eq!(c.static_dir, None);
         assert_eq!(c.bot_seed, None);
+        assert_eq!(c.bike, None);
+    }
+
+    #[test]
+    fn yesoul_is_a_bike_the_server_can_own() {
+        let c = config(&[("OPENRADLR_BIKE", " yesoul ")]).unwrap();
+        assert_eq!(c.bike, Some(BikeKind::Yesoul));
+    }
+
+    #[test]
+    fn an_unknown_bike_kind_is_a_config_error() {
+        let e = config(&[("OPENRADLR_BIKE", "kickr")]).unwrap_err();
+        assert_eq!(e.key, "OPENRADLR_BIKE");
+        assert_eq!(e.value, "kickr");
     }
 
     #[test]

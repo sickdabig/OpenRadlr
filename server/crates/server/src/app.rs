@@ -208,6 +208,20 @@ pub fn build_with_stats(config: &Config) -> Result<(Router, DistanceStats), BoxE
         .with_vehicle_codes(vehicle_codes)
         .with_resume_tokens(resume_tokens);
 
+    // The server's own Bluetooth bike (ADR 0020): only with the `bike` feature.
+    let bike = match config.bike {
+        None => None,
+        #[cfg(feature = "bike")]
+        Some(kind) => Some(crate::ble::BikeHub::start(kind)),
+        #[cfg(not(feature = "bike"))]
+        Some(_) => {
+            tracing::warn!(
+                "OPENRADLR_BIKE is set, but this build was made without the `bike` cargo feature: no bike attached"
+            );
+            None
+        }
+    };
+
     let info = Arc::new(ServerInfo {
         name: config.server_name.clone(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -269,6 +283,7 @@ pub fn build_with_stats(config: &Config) -> Result<(Router, DistanceStats), BoxE
             limits: config.connection_limits(),
         }),
         strava,
+        bike,
         allow_simulated_trainer: config.allow_simulated_trainer,
         allow_paddle_mode: config.allow_paddle_mode,
         stats: stats.clone(),

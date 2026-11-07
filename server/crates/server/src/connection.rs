@@ -2,6 +2,7 @@
 //! machine (see [`crate::session`]) and carries out what it decides.
 
 use crate::afk::{AfkEvent, AfkOutcome};
+use crate::ble::{BikeClaim, Status};
 use crate::game::JoinError;
 use crate::guard::SlotPermit;
 use crate::http::AppState;
@@ -69,6 +70,9 @@ pub async fn serve(socket: WebSocket, state: AppState) {
     let mut epoch = 0;
     // The client sent `leave`: remove the rider at once instead of detaching.
     let mut leaving = false;
+    // The server's bike, if this connection rides it (ADR 0020). Dropping the
+    // claim — here or on a replaced claim — frees the bike.
+    let mut bike: Option<BikeClaim> = None;
     let mut _seat: Option<SlotPermit<()>> = None;
     let mut checks = tokio::time::interval(Duration::from_secs(1));
     checks.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -178,11 +182,64 @@ pub async fn serve(socket: WebSocket, state: AppState) {
                         }
                     }
                     Action::Stayed => state.afk.record(AfkOutcome::Stayed),
+                    Action::UseBike => {
+                        // Only a joined rider rides the bike; the session already made sure.
+                        let Phase::Joined(rider_id) = session.phase() else { continue };
+                        let Some(hub) = &state.bike else {
+                            if outbox
+                                .send(ServerMessage::error(
+                                    "bike_unavailable",
+                                    "this server has no bike attached",
+                                ))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                            continue;
+                        };
+                        match hub.claim(rider_id) {
+                            Ok(mut claim) => {
+                                // The current status right away, then updates below.
+                                let status = *claim.status.borrow_and_update();
+                                if outbox.send(bike_message(status)).await.is_err() {
+                                    break;
+                                }
+                                bike = Some(claim);
+                            }
+                            Err(_) => {
+                                if outbox
+                                    .send(ServerMessage::error(
+                                        "bike_busy",
+                                        "another rider is on the bike",
+                                    ))
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
                     Action::Leave => {
                         if session.afk_warning_open() {
                             state.afk.record(AfkOutcome::Left);
                         }
                         leaving = true;
+                        break;
+                    }
+                }
+            }
+            // The bike's readings, while this connection rides it (ADR 0020).
+            update = async {
+                let claim = bike.as_mut().expect("bike arm armed only with a claim");
+                let Ok(()) = claim.status.changed().await else {
+                    return None; // the hub is gone: happens only at shutdown
+                };
+                Some(*claim.status.borrow_and_update())
+            }, if bike.is_some() => {
+                if let Some(status) = update {
+                    if outbox.send(bike_message(status)).await.is_err() {
                         break;
                     }
                 }
@@ -236,6 +293,24 @@ pub async fn serve(socket: WebSocket, state: AppState) {
 /// Codes are typed by hand: trimmed and upper-cased, as boarding does.
 fn normalise_code(code: &str) -> String {
     code.trim().to_ascii_uppercase()
+}
+
+/// The wire form of a bike status (ADR 0020).
+fn bike_message(status: Status) -> ServerMessage {
+    let Status {
+        connected,
+        power_w,
+        cadence_rpm,
+        resistance,
+        distance_m,
+    } = status;
+    ServerMessage::Bike {
+        connected,
+        power: power_w,
+        cadence: cadence_rpm,
+        resistance,
+        distance_m,
+    }
 }
 
 fn join_error(error: JoinError) -> ServerMessage {

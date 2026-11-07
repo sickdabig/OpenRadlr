@@ -23,6 +23,7 @@
 pub mod afk;
 pub mod app;
 pub mod auth;
+pub mod ble;
 pub mod config;
 pub mod connection;
 pub mod events_file;

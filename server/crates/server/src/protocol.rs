@@ -127,6 +127,9 @@ pub enum ClientMessage {
     },
     /// Answer to an `afk_warning`: the rider is still there.
     Stay,
+    /// Ask to ride the server's own Bluetooth bike (see `ble` and
+    /// ADR 0020); one rider at a time.
+    UseBike,
     /// Leave the game now; the server removes the rider and closes the
     /// connection.
     Leave,
@@ -261,6 +264,18 @@ pub enum ServerMessage {
         rider_id: RiderId,
         name: String,
         text: String,
+    },
+    /// A reading from the server's own Bluetooth bike (ADR 0020), sent to the
+    /// connection that claimed it with `use_bike`. All zeros while the bike
+    /// is quiet; `connected` false between connections.
+    Bike {
+        connected: bool,
+        power: f64,
+        cadence: f64,
+        /// The raw resistance knob position (the S3 does not scale it).
+        resistance: u8,
+        /// The bike's own cumulative distance counter, metres.
+        distance_m: f64,
     },
     Error {
         code: String,
