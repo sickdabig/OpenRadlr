@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pickRoute, routeCharacter, routeStats, routesOf, serverStatus, studioTagline, buildLabel, communityDistance, routeRiders, workoutRoute, workoutTagline, stageStats, stageHeadline, stageLede, devicesVisible, privacyUrl, serverName, activityOf, routesFor, pickForActivity, activityTabs, shownActivity, showsCards, routeCard, stravaLine, joinAction, routeDescription } from "../public/js/view/startMenu.js";
 import { PRESETS } from "../public/js/workout/presets.js";
+import { PRESET_WORKOUTS, createWorkout, steady } from "../public/js/ride/workout.js";
 
 const routes = [
   { id: "rolling-hills", name: "Rolling Hills", length_m: 4828, elevation_gain_m: 64, players: 2 },
@@ -24,7 +25,11 @@ test("server status shows riders, room left and when it is full", () => {
 
 test("routes come from the list, or from the single route of older servers", () => {
   assert.deepEqual(routesOf({ routes }).slice(0, 3), routes);
-  assert.deepEqual(routesOf({ route: { id: "x", name: "X" }, players: 4 }), [{ id: "x", name: "X", players: 4 }, { id: "workout", kind: "workout", name: "Workout" }]);
+  assert.deepEqual(routesOf({ route: { id: "x", name: "X" }, players: 4 }), [
+    { id: "x", name: "X", players: 4 },
+    { id: "workout", kind: "workout", name: "Workout" },
+    { id: "training", kind: "training", name: "Training" },
+  ]);
   assert.deepEqual(routesOf(null), []);
 });
 
@@ -90,12 +95,13 @@ test("servers that don't count distance show nothing", () => {
   assert.equal(communityDistance({ distance_m: { trainer: "x" } }), null);
 });
 
-test("the workout card follows the routes and the studio", () => {
+test("the training card comes last, after the routes, the studio and the workout", () => {
   const studioInfo = { id: "studio", name: "Spin studio", class: { name: "HIIT", starts_at_s: 0 }, next: { name: "x", starts_at_s: 0 } };
   const cards = routesOf({ routes, studio: studioInfo });
-  assert.deepEqual(cards.at(-1), { id: "workout", kind: "workout", name: "Workout" });
-  assert.equal(cards.at(-2).kind, "studio");
-  assert.equal(routesOf({ routes: [] }).some((card) => card.kind === "workout"), false);
+  assert.deepEqual(cards.at(-1), { id: "training", kind: "training", name: "Training" });
+  assert.equal(cards.at(-2).kind, "workout");
+  assert.equal(cards.at(-3).kind, "studio");
+  assert.equal(routesOf({ routes: [] }).some((card) => card.kind === "training"), false);
 });
 
 test("the workout joins the first route", () => {
@@ -107,17 +113,20 @@ test("the workout tagline counts presets and their lengths", () => {
   assert.equal(workoutTagline(PRESETS), "3 workouts · 4–12 min");
 });
 
-test("the stage stats under the headline: character, figures and riders, the class running or the workouts", () => {
-  assert.equal(stageStats({ id: "x", length_m: 4828, elevation_gain_m: 64, players: 2 }), "Rolling · 4.8 km · 64 m up · 2 riders");
-  assert.equal(stageStats({ ...studio, kind: "studio" }, 10_000), "HIIT 30/30 starts in 5:00 · 3 riders");
-  assert.equal(stageStats({ kind: "workout" }), "3 workouts · 4–12 min");
-  assert.equal(stageStats(null), "");
+test("the stage stats under the headline: character, figures and riders, the class running, the workouts or the library", () => {
+  const library = [...PRESET_WORKOUTS, createWorkout({ name: "My file", segments: [steady(600, 0.6)] })];
+  assert.equal(stageStats({ id: "x", length_m: 4828, elevation_gain_m: 64, players: 2 }, library), "Rolling · 4.8 km · 64 m up · 2 riders");
+  assert.equal(stageStats({ ...studio, kind: "studio" }, library, 10_000), "HIIT 30/30 starts in 5:00 · 3 riders");
+  assert.equal(stageStats({ kind: "workout" }, library), "3 workouts · 4–12 min");
+  assert.equal(stageStats({ kind: "training" }, library), "5 workouts · 10–51 min");
+  assert.equal(stageStats(null, library), "");
 });
 
 test("the headline names the picked route or class, asks for a workout or introduces the events", () => {
   assert.equal(stageHeadline({ id: "x", name: "Col" }), "Col");
   assert.equal(stageHeadline({ ...studio, kind: "studio" }), "Spin Studio");
   assert.equal(stageHeadline({ kind: "workout" }), "Pick your workout");
+  assert.equal(stageHeadline({ kind: "training" }), "Pick your workout");
   assert.equal(stageHeadline({ id: "x", name: "Col" }, "events"), "Events");
   assert.equal(stageHeadline(null), "Where do you want to ride?");
 });
@@ -128,13 +137,15 @@ test("the line under the headline describes the pick, or how riding together wor
   assert.equal(stageLede(null), stageLede({ id: "x" }));
   assert.equal(stageLede({ kind: "studio" }), "Ride a class together: bikes side by side, targets from your FTP.");
   assert.equal(stageLede({ kind: "workout" }), "Bodyweight circuit at the café's outdoor gym.");
+  assert.equal(stageLede({ kind: "training" }), "Structured intervals from your FTP: warm-up, blocks, cool-down. Start when you're ready.");
   assert.equal(stageLede({ id: "x" }, "events"), "Group rides and races on a schedule. Join one and you ride its route.");
 });
 
-test("each card belongs to an activity: riding a route, a studio class or the workout", () => {
+test("each card belongs to an activity: riding a route, a studio class, the workout or the training library", () => {
   assert.equal(activityOf({ id: "x" }), "ride");
   assert.equal(activityOf({ kind: "studio" }), "studio");
   assert.equal(activityOf({ kind: "workout" }), "workout");
+  assert.equal(activityOf({ kind: "training" }), "training");
   assert.equal(activityOf(null), "ride");
 });
 
@@ -160,6 +171,7 @@ test("the activity tabs: only what the server offers, events with their count an
     { id: "ride", label: "Ride", count: 3, live: false },
     { id: "studio", label: "Studio", count: 1, live: false },
     { id: "workout", label: "Workout", count: 1, live: false },
+    { id: "training", label: "Training", count: 1, live: false },
   ]);
   const rows = [
     { id: "a", joinable: false, countdown: "in 2h" },
@@ -168,6 +180,7 @@ test("the activity tabs: only what the server offers, events with their count an
   assert.deepEqual(activityTabs(routesOf({ routes }), rows).map((tab) => [tab.id, tab.count, tab.live]), [
     ["ride", 3, false],
     ["workout", 1, false],
+    ["training", 1, false],
     ["events", 2, true],
   ]);
   assert.equal(activityTabs(worlds, [{ id: "c", joinable: false, countdown: "running" }]).at(-1).live, true);
@@ -189,6 +202,8 @@ test("a picker needs at least two cards: a single route or the studio stands alo
 
 test("the workout card keeps no devices heading: nothing left to connect there", () => {
   assert.equal(devicesVisible({ kind: "workout" }), false);
+  // The training rides on a trainer, so its ride-mode cards stay.
+  assert.equal(devicesVisible({ kind: "training" }), true);
   assert.equal(devicesVisible({ id: "x" }), true);
 });
 
@@ -219,6 +234,11 @@ test("a route card: name, character, figures and riders; its description waits u
     special: false,
   });
   assert.equal(routeCard({ id: "workout", kind: "workout", name: "Workout" }).riders, null);
+  const training = routeCard({ id: "training", kind: "training", name: "Training" });
+  assert.equal(training.tag, "Training");
+  assert.equal(training.riders, null);
+  assert.equal(training.special, true);
+  assert.match(training.stats, /Start any time/);
   assert.equal(routeCard({ ...studio, kind: "studio" }).tag, "Class");
 });
 
@@ -240,6 +260,9 @@ test("the main button does one thing: ride, start the workout, board a friend's 
   const base = { selected: route, full: false, needsStrava: false, boardCode: null };
   assert.deepEqual(joinAction(base), { kind: "ride", label: "Ride Col", disabled: false });
   assert.deepEqual(joinAction({ ...base, selected: { id: "workout", kind: "workout" } }), { kind: "workout", label: "Start workout", disabled: false });
+  assert.deepEqual(joinAction({ ...base, selected: { id: "training", kind: "training" } }), { kind: "training", label: "Start workout", disabled: false });
+  // Boarding a friend's vehicle makes no sense on either workout: the code is ignored.
+  assert.deepEqual(joinAction({ ...base, selected: { kind: "training" }, boardCode: "K7XQ2M" }), { kind: "training", label: "Start workout", disabled: false });
   assert.deepEqual(joinAction({ ...base, boardCode: "K7XQ2M" }), { kind: "board", label: "Board K7XQ2M", disabled: false });
   assert.deepEqual(joinAction({ ...base, needsStrava: true, boardCode: "K7XQ2M" }), { kind: "strava", label: "Connect with Strava to ride", disabled: false });
   assert.deepEqual(joinAction({ ...base, full: true }), { kind: "full", label: "Server is full", disabled: true });

@@ -33,6 +33,10 @@ export const DEFAULT_PROFILE = Object.freeze({
   cog: 14,
   workoutPreset: null,
   workoutCues: true,
+  /** The structured workout last picked in the library, by name (unknown names fall back). */
+  trainingPick: null,
+  /** Imported .zwo workouts: the library survives reloads (presets stay in code). */
+  workouts: [],
   publicKey: null,
 });
 

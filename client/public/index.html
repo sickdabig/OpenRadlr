@@ -116,6 +116,16 @@
               <label class="check"><input id="workout-cues" type="checkbox" checked /> <span data-i18n="workout.cues">Beep in the last 3 seconds</span></label>
             </fieldset>
 
+            <fieldset id="training-setup" hidden>
+              <legend data-i18n="training.library">Workout library</legend>
+              <div id="training-cards" class="workout-cards" role="radiogroup" aria-label="Workout library" data-i18n-attr="aria-label:training.library"></div>
+              <input id="training-file" type="file" accept=".zwo,.xml" hidden />
+              <div class="workout-actions">
+                <button type="button" id="training-import" class="secondary" data-i18n="drawer.importZwo">Import .zwo</button>
+              </div>
+              <p id="training-library-note" class="field-hint" aria-live="polite"></p>
+            </fieldset>
+
             <fieldset id="devices">
               <legend class="trainer-only" data-i18n="start.howAreYouRiding">How are you riding?</legend>
               <div id="ride-modes" class="ride-modes trainer-only" role="radiogroup" aria-label="How are you riding?" data-i18n-attr="aria-label:start.howAreYouRiding">

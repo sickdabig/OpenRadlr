@@ -42,6 +42,13 @@ test("saving the same FTP keeps its source and date", () => {
   assert.equal(store.load().ftpSource, "estimated");
 });
 
+test("the workout library and its pick live in the profile", () => {
+  const store = new ProfileStore({ storage: memoryStorage() });
+  const workout = { name: "My file", description: "", segments: [{ durationS: 600, from: 0.6, to: 0.6, label: "Block", kind: "steady" }] };
+  const saved = store.save({ ...store.load(), trainingPick: "Sweet Spot 3×8", workouts: [workout] });
+  assert.deepEqual(new ProfileStore({ storage: memoryStorage(JSON.stringify(saved)) }).load(), { ...saved, workouts: [workout], trainingPick: "Sweet Spot 3×8" });
+});
+
 test("provenance text names the source and the date", () => {
   const at = (ftpSource, ftpDate = NOON) => ftpProvenance({ ftpSource, ftpDate }, { locale: "en-GB" });
   assert.equal(at("default", null), "Default value: take the FTP test or ride a hard effort to measure it.");

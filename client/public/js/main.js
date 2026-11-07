@@ -28,7 +28,8 @@ import { draftInfo } from "./ride/draft.js";
 import { applyDifficulty } from "./ride/difficulty.js";
 import { RideSession } from "./ride/rideSession.js";
 import { TrainingControl } from "./ride/trainingControl.js";
-import { PRESET_WORKOUTS, parseZwo, totalDuration, segmentLabel, workoutDescription, workoutName } from "./ride/workout.js";
+import { PRESET_WORKOUTS, createWorkout, parseZwo, totalDuration, segmentLabel, workoutDescription, workoutName } from "./ride/workout.js";
+import { renderWorkoutLibrary } from "./view/workoutLibraryView.js";
 import { Gearbox, shiftingCommand } from "./ride/virtualShifting.js";
 import { climbFeelVisible } from "./ride/climbFeel.js";
 import { RiderSmoother } from "./ride/smoothing.js";
@@ -345,6 +346,8 @@ const app = {
   /** The guided FTP ramp test of this ride (null outside a ride). */
   ftpTest: null,
   workouts: [...PRESET_WORKOUTS],
+  /** The structured workout last picked in the library (by name). */
+  trainingPick: null,
   view3d: null,
   /** The start menu's map, profile and drone view (null once riding). */
   menu: null,
@@ -400,6 +403,8 @@ const app = {
   studioView: null,
   /** The café workout of this ride (null on a road or in the studio, #77). */
   workout: null,
+  /** The structured workout a training join starts (null elsewhere). */
+  pendingWorkout: null,
   /** The plan being worked out (without the get-ready block), its HUD view, beep, latest heart rate, and the heart-rate subscription. */
   workoutPlan: null,
   workoutView: null,
@@ -415,6 +420,9 @@ const app = {
    */
   ride: null,
 };
+
+// The library: the presets plus the imports the profile keeps.
+app.workouts.push(...savedWorkouts(app.profile.workouts));
 
 /**
  * The ride screen as the page loaded it. Each ride starts from a fresh copy,
@@ -577,6 +585,7 @@ function initSetup() {
   showLevel();
   setDifficultyInputs(app.profile.difficulty);
   initWorkoutSetup();
+  initTrainingSetup();
 
   $("difficulty").addEventListener("input", (e) => setDifficultyInputs(e.target.value / 100));
   $("virtual-shifting").checked = app.profile.virtualShifting;
@@ -610,7 +619,7 @@ function initSetup() {
     if (action === "strava") return location.assign("/auth/strava");
     if (action === "board") return boardFromMenu();
     const typed = $("board-code").value.trim();
-    if (typed && action !== "workout") return showSetupError(normaliseCode(typed).error);
+    if (typed && action !== "workout" && action !== "training") return showSetupError(normaliseCode(typed).error);
     joinRide().catch(joinFailed);
   });
 }
@@ -654,6 +663,76 @@ function pickWorkoutFigure(id, index) {
   app.workoutFigure = index;
   renderWorkoutPick();
   app.menu?.showWorkout?.(pickedWorkout(), index);
+}
+
+// ------------------------------------------------ workout library ---
+
+/** The most imports the profile keeps; createWorkout caps each one's size. */
+const MAX_SAVED_WORKOUTS = 25;
+
+/** The imported workouts stored in the profile, re-validated: a broken one leaves the library. */
+function savedWorkouts(stored) {
+  const imports = Array.isArray(stored) ? stored.slice(-MAX_SAVED_WORKOUTS) : [];
+  const valid = [];
+  for (const workout of imports) {
+    try {
+      valid.push(createWorkout(workout));
+    } catch {
+      // A workout the current rules reject stays out; the rest of the library loads.
+    }
+  }
+  return valid;
+}
+
+/** The Training tab: the library cards with the saved pick preselected, the import button below. */
+function initTrainingSetup() {
+  app.trainingPick = app.profile.trainingPick;
+  $("training-file").addEventListener("change", importTrainingFile);
+  renderTrainingLibrary();
+}
+
+/** The picked workout; an unknown saved name falls back to the first card. */
+const pickedTrainingWorkout = () => app.workouts.find((workout) => workoutName(workout) === app.trainingPick) ?? app.workouts[0];
+
+function renderTrainingLibrary() {
+  renderWorkoutLibrary($("training-cards"), app.workouts, { selectedName: app.trainingPick, onSelect: pickTrainingWorkout });
+}
+
+function pickTrainingWorkout(name) {
+  app.trainingPick = name;
+  renderTrainingLibrary();
+}
+
+/** Keeps the imports in the profile, so the library survives reloads. */
+function persistWorkouts() {
+  const imports = app.workouts.filter((workout) => !PRESET_WORKOUTS.includes(workout));
+  app.profile = profiles.save({ ...app.profile, workouts: imports.slice(-MAX_SAVED_WORKOUTS) });
+}
+
+async function importTrainingFile(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  try {
+    if (file.size > 512 * 1024) throw new Error(t("training.fileTooLarge"));
+    const workout = parseZwo(await file.text());
+    app.workouts.push(workout);
+    persistWorkouts();
+    app.trainingPick = workoutName(workout);
+    renderTrainingLibrary();
+    $("training-library-note").textContent = t("training.imported", { name: workout.name });
+  } catch (error) {
+    $("training-library-note").textContent = t("training.importFailed", { message: error.message });
+  }
+}
+
+/** The workout picked on the Training tab runs from the join; its clock waits for pedalling. */
+function startPendingWorkout() {
+  const workout = app.pendingWorkout;
+  if (!workout) return;
+  app.pendingWorkout = null;
+  app.training.startWorkout(workout);
+  notify(t("training.started", { name: workoutName(workout) }));
 }
 
 function setDifficultyInputs(difficulty) {
@@ -898,7 +977,7 @@ function renderStartMenu() {
     }
     renderStartMenu();
   });
-  $("stage-stats").textContent = activity === "events" ? "" : stageStats(selected);
+  $("stage-stats").textContent = activity === "events" ? "" : stageStats(selected, app.workouts);
   const cards = routesFor(activity, routes);
   $("route-list").hidden = !showsCards(activity, cards);
   renderRoutes($("route-list"), cards, selected?.id ?? null, (id) => {
@@ -913,12 +992,14 @@ function renderStartMenu() {
   const workout = selected?.kind === "workout";
   $("profile-form").classList.toggle("workout", workout);
   $("workout-setup").hidden = !workout;
+  // The training rides on a trainer: the library sits beside the ride modes.
+  $("training-setup").hidden = selected?.kind !== "training";
   $("routes-title").textContent = stageHeadline(selected, activity);
   $("routes-lede").textContent = stageLede(selected, activity);
   $("devices").hidden = !devicesVisible(selected);
   renderRideModes();
-  // Vehicles are on the roads: no boarding from the workout card.
-  $("board-start").hidden = workout;
+  // Vehicles are on the roads: no boarding from the workout or training card.
+  $("board-start").hidden = workout || selected?.kind === "training";
   const join = $("join");
   const needsStrava = Boolean(app.info?.strava?.required) && !app.stravaAccount;
   if (!join.dataset.busy) {
@@ -1241,7 +1322,10 @@ async function joinRide(restored = null) {
   $("setup-error").textContent = "";
   const profile = { ...app.profile, ...formProfile() };
   const errors = validateProfile(profile);
-  if (pickRoute(routesOf(app.info), app.routeId)?.kind === "workout") return joinWorkout(profile, errors);
+  const picked = pickRoute(routesOf(app.info), app.routeId);
+  if (picked?.kind === "workout") return joinWorkout(profile, errors);
+  // The training rides the default route: the library card is not a place.
+  if (picked?.kind === "training") app.routeId = workoutRoute(app.info) ?? app.routeId;
   if (!app.trainer) errors.push(t("join.error.noTrainer"));
   if (app.trainer instanceof SimulatedTrainer && app.info?.simulated_trainer === false) {
     errors.push(t("join.error.realOnly"));
@@ -1257,6 +1341,8 @@ async function joinRide(restored = null) {
     await discardUnfinished();
   }
   app.restored = restored;
+  // A continued ride keeps its own workout; a training join starts the picked one.
+  app.pendingWorkout = !restored && picked?.kind === "training" ? pickedTrainingWorkout() : null;
 
   const route = pickRoute(routesOf(app.info), app.routeId);
   // Callbacks of this join check it is still the current ride.
@@ -1503,6 +1589,7 @@ function endRide() {
     studio: null,
     studioView: null,
     workout: null,
+    pendingWorkout: null,
     workoutPlan: null,
     workoutGym: null,
     workoutRowFigures: [],
@@ -1703,6 +1790,7 @@ function startRoad({ simulated, setSimPower }) {
   $("event-call-button").addEventListener("click", () => toggleRace());
   initViews();
   initTraining({ simulated, setSimPower });
+  startPendingWorkout();
   initHud();
   initVehicle();
 

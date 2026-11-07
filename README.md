@@ -80,7 +80,9 @@ uploaded to Strava.
 - **Browser client** — rides the bike the server itself is connected to over its
   own Bluetooth adapter (e.g. a Yesoul S3), plus a simulated trainer,
   trainer difficulty, virtual shifting (for single-gear setups), a
-  ERG mode with structured workouts (built-in presets and `.zwo` import),
+  ERG mode with structured workouts (built-in presets and `.zwo` import), a
+  workout library on the start menu's Training tab — pick one and start riding
+  it whenever you want, alone or with whoever is out there,
   low-poly 3D view with chase camera, a 2D lane view, an elevation profile, a
   minimap, nearby riders, race panel and chat; live player counts in the start
   menu and during the ride; ride photos and a summary image; ride summary with
