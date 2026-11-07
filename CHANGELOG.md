@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The server decides what riders connect in the browser: with a bike of its own offered (e.g. the `bike` server feature), the standard is no Web Bluetooth UX at all — the trainer card becomes "Server's bike", the chooser, heart-rate and controller rows and the Bluetooth warnings go (the operator's `OPENRADLR_CLIENT_DEVICES=on` brings them back for a household that mixes both). `/api/info` says the verdict in the additive `client_devices` field; servers without a bike always offer client devices.
+
 - The server can ride a bike of its own: with the `bike` cargo feature and `OPENRADLR_BIKE=yesoul`, it connects to a Yesoul S3 spin bike over its own Bluetooth adapter and streams power, cadence, resistance and distance to one riding client — no Web Bluetooth needed, so any browser in the house (a phone without Bluetooth support included) can ride the bike standing next to the server. The start menu offers "Ride the server bike" when the server has one; one rider at a time, and the rider coming back after a dropped connection claims it again. Silence reads as zero after 2 s, a lost bike reconnects; see ADR 0020.
 
 - A rider who sits at 0 W for 30 minutes gets a "Still riding?" warning with Stay and Leave now, two minutes to answer. Stay gives three more reminders 10 minutes apart, then a final one with Leave now only; no answer removes the rider, so an idle rider no longer holds a seat. Pedalling resets the clock, and workouts are exempt. `OPENRADLR_AFK_TIMEOUT_S=0` turns it off. Outcomes are counted in `openradlr_afk_events_total`.

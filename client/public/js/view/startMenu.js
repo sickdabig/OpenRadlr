@@ -127,6 +127,17 @@ export function devicesVisible(picked, bluetooth) {
   return picked?.kind !== "workout" || bluetooth;
 }
 
+/**
+ * Whether riders connect their own devices through the browser's Web Bluetooth.
+ * A server without a bike of its own always says yes — there is nothing else
+ * to ride; one offering its bike as standard hides the browser device UX
+ * unless the operator set `OPENRADLR_CLIENT_DEVICES=on`. Missing info (the
+ * menu's first paint) never collapses anything.
+ */
+export function clientDevices(info) {
+  return !info?.bike || Boolean(info?.client_devices);
+}
+
 /** The figures under the headline: "Rolling · 4.8 km · 64 m up · 2 riders", the class running, or the workouts. */
 export function stageStats(picked, nowS = Date.now() / 1000) {
   if (!picked) return "";

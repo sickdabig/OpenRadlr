@@ -89,6 +89,8 @@ pub struct ServerInfo {
     /// Riders may join with the simulated trainer / with phone paddles.
     pub allow_simulated_trainer: bool,
     pub allow_paddle_mode: bool,
+    /// Riders may connect their own devices in the browser (`OPENRADLR_CLIENT_DEVICES`).
+    pub allow_client_devices: bool,
     /// Analytics the client should load, if the operator set one up.
     pub analytics: Option<config::Analytics>,
     /// The operator's privacy policy, if they set one.

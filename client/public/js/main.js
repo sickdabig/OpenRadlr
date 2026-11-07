@@ -79,7 +79,7 @@ import { drawRaceTimeline } from "./view/raceTimelineView.js";
 import { drawMapPreview } from "./view/mapPreview.js";
 import { MenuStage } from "./view/menuStage.js";
 import { BUILD } from "./build.js";
-import { buildLabel, communityDistance, pickRoute, renderRoutes, routesOf, serverStatus, stageHeadline, stageLede, stageStats, workoutRoute, devicesVisible, privacyUrl, serverName, joinAction, stravaLine, activityOf, activityTabs, pickForActivity, renderActivityTabs, routesFor, shownActivity, showsCards } from "./view/startMenu.js";
+import { buildLabel, communityDistance, pickRoute, renderRoutes, routesOf, serverStatus, stageHeadline, stageLede, stageStats, workoutRoute, devicesVisible, privacyUrl, serverName, joinAction, stravaLine, activityOf, activityTabs, pickForActivity, renderActivityTabs, routesFor, shownActivity, showsCards, clientDevices } from "./view/startMenu.js";
 import { PRESETS } from "./workout/presets.js";
 import { renderWorkoutCards } from "./view/workoutCards.js";
 import { WorkoutSession } from "./workout/workoutSession.js";
@@ -592,17 +592,8 @@ function initSetup() {
   setDifficultyInputs(app.profile.difficulty);
   initWorkoutSetup();
 
-  if (!isBluetoothAvailable()) {
-    $("bluetooth-warning").hidden = false;
-    // Say why: a non-secure page hides Web Bluetooth even in Chrome (and the
-    // fix — open it as localhost, or serve https — differs from "use Chrome").
-    $("bluetooth-warning-reason").textContent = t(bluetoothUnavailableReason({ secure: Boolean(globalThis.isSecureContext) }));
-    // Buttons that can't work here only get in the way (an iPhone never gets Bluetooth).
-    $("profile-form").classList.add("no-bluetooth");
-    $("connect-trainer").disabled = true;
-    $("connect-hr").disabled = true;
-    $("connect-controller").disabled = true;
-  }
+  // The server decides what riders connect here: renderRideModes collapses or
+  // opens the browser's peripheral rows and the Bluetooth warning per policy.
   initKnownDevices();
 
   $("difficulty").addEventListener("input", (e) => setDifficultyInputs(e.target.value / 100));
@@ -969,7 +960,7 @@ function renderStartMenu() {
   $("workout-setup").hidden = !workout;
   $("routes-title").textContent = stageHeadline(selected, activity);
   $("routes-lede").textContent = stageLede(selected, activity);
-  $("devices").hidden = !devicesVisible(selected, isBluetoothAvailable());
+  $("devices").hidden = !devicesVisible(selected, webBle());
   renderRideModes();
   // Vehicles are on the roads: no boarding from the workout card.
   $("board-start").hidden = workout;
@@ -1140,27 +1131,55 @@ function renderReconnectButtons() {
   }
 }
 
+/** Riders connect devices in the browser: Web Bluetooth available, and the server offers them. */
+function webBle() {
+  return isBluetoothAvailable() && clientDevices(app.info);
+}
+
 /** The ride-mode cards and the panel of the chosen one; outside a ride the trainer follows the choice. */
 function renderRideModes() {
   const picked = pickRoute(routesOf(app.info), app.routeId);
   const bluetooth = isBluetoothAvailable();
+  const onWeb = webBle();
   const modes = rideModes({ info: app.info, picked });
-  const mode = chooseRideMode(app.rideMode, modes, bluetooth, { serverBike: Boolean(app.info?.bike) });
+  const mode = chooseRideMode(app.rideMode, modes, onWeb, { serverBike: Boolean(app.info?.bike) });
   for (const card of document.querySelectorAll(".mode-card")) {
     const entry = modes.find((m) => m.id === card.dataset.mode);
     card.hidden = !entry;
     card.setAttribute("aria-checked", String(card.dataset.mode === mode));
     card.setAttribute("aria-disabled", String(!entry?.available));
     card.title = entry?.reason ?? "";
+    // The hint follows the server's stance (the trainer card reads
+    // "Server's bike" when the browser device UX is off): the key goes with
+    // the text, so a language switch doesn't undo it.
+    const hint = card.querySelector("span[data-i18n]");
+    if (hint && entry) {
+      hint.textContent = entry.hint;
+      hint.dataset.i18n = entry.hintKey;
+    }
   }
   const reason = modes.find((m) => m.id === app.rideMode && !m.available)?.reason ?? "";
   $("ride-mode-reason").hidden = !reason;
   $("ride-mode-reason").textContent = reason;
   for (const panel of document.querySelectorAll(".mode-panel")) panel.hidden = panel.dataset.for !== mode;
-  const addons = addonsShown(mode, bluetooth, picked);
+  const addons = addonsShown(mode, onWeb, picked);
   $("addon-hr").hidden = !addons.hr;
   $("addon-controller").hidden = !addons.controller;
   $("controller-live").hidden = !addons.controller || app.controllers.length === 0;
+  // The server's policy decides the browser's peripheral rows: the class hides
+  // the connect row and add-ons (CSS), the warning speaks only where it helps —
+  // a plain-http page hides Web Bluetooth even in Chrome, and the collapsed
+  // standard has nothing to warn about: the answer is "ride the server's bike".
+  $("profile-form").classList.toggle("no-bluetooth", !onWeb);
+  $("bluetooth-warning").hidden = bluetooth || !clientDevices(app.info);
+  if (!bluetooth && clientDevices(app.info)) {
+    // Say why: a non-secure page hides Web Bluetooth even in Chrome (and the
+    // fix — open it as localhost, or serve https — differs from "use Chrome").
+    $("bluetooth-warning-reason").textContent = t(bluetoothUnavailableReason({ secure: Boolean(globalThis.isSecureContext) }));
+  }
+  // The bike line follows the info: it appears as soon as the server offers
+  // one and goes when it's ridden; every menu render re-decides.
+  renderServerBike();
   if (!app.ride && picked?.kind !== "workout") applyRideMode(mode);
 }
 
@@ -1213,9 +1232,6 @@ function renderServerBike() {
   const bike = app.info?.bike;
   $("server-bike-hint").textContent = bike ? t("start.serverBikeHint", { bike: bikeName(bike.kind) }) : "";
   $("server-bike-line").hidden = !bike || Boolean(app.trainer);
-  // A browser without Web Bluetooth that can ride the server's bike stays quiet:
-  // "can't reach Bluetooth trainers" would only send them chasing the wrong thing.
-  if (!isBluetoothAvailable()) $("bluetooth-warning").hidden = Boolean(bike);
 }
 
 /** Uses the bike the server itself is connected to (ADR 0020). */
@@ -1223,6 +1239,7 @@ function useServerBike() {
   const bike = app.info?.bike;
   if (!bike || app.trainer) return;
   useTrainer(new ServerBikeTrainer({ label: t("devices.serverBikeLabel", { bike: bikeName(bike.kind) }) }));
+  $("trainer-status").textContent = t("devices.serverBikeLabel", { bike: bikeName(bike.kind) });
   renderServerBike();
 }
 
@@ -1248,7 +1265,10 @@ function showShiftingSettings() {
 async function initKnownDevices(kinds = Object.keys(DEVICES)) {
   renderReconnectButtons();
   const known = knownDevices.list().filter((entry) => kinds.includes(entry.kind));
-  if (!isBluetoothAvailable() || !known.length) return;
+  // A server that collapsed the browser device UX never auto-connects one:
+  // its riders ride the server's bike (remembered grants keep working by
+  // hand if the operator flips the policy back).
+  if (!webBle() || !known.length) return;
   const found = await grantedDevices(known);
   const support = typeof navigator.bluetooth.getDevices === "function" ? `getDevices() found ${found.length}` : "no getDevices() in this browser"; // i18n-ok (log)
   deviceLog.info(`Remembered devices: ${known.map((e) => e.name).join(", ")} (${support})`);

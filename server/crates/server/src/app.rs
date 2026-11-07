@@ -230,6 +230,7 @@ pub fn build_with_stats(config: &Config) -> Result<(Router, DistanceStats), BoxE
         route_id: worlds.default_world().id().to_owned(),
         allow_simulated_trainer: config.allow_simulated_trainer,
         allow_paddle_mode: config.allow_paddle_mode,
+        allow_client_devices: config.allow_client_devices,
         analytics: config.analytics.clone(),
         privacy_url: config.privacy_url.clone(),
         grace_s: config.grace_s,
@@ -286,6 +287,7 @@ pub fn build_with_stats(config: &Config) -> Result<(Router, DistanceStats), BoxE
         bike,
         allow_simulated_trainer: config.allow_simulated_trainer,
         allow_paddle_mode: config.allow_paddle_mode,
+        allow_client_devices: config.allow_client_devices,
         stats: stats.clone(),
         afk: AfkStats::default(),
     };

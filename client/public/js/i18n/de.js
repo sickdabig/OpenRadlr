@@ -682,6 +682,7 @@ export default {
   "start.climbFeel": "Berggefühl",
   "setup.mode.trainer": "Smart-Rolle",
   "setup.mode.trainerHint": "Bluetooth",
+  "setup.mode.serverBike": "Bike des Servers",
   "setup.mode.paddles": "Handy-Paddles",
   "setup.mode.paddlesHint": "Kein Rad nötig",
   "setup.mode.sim": "Simulator",

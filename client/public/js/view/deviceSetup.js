@@ -5,17 +5,24 @@
  */
 
 import { t } from "../i18n/i18n.js";
+import { clientDevices } from "./startMenu.js";
 
-const modeText = () => ({
-  trainer: { label: t("setup.mode.trainer"), hint: t("setup.mode.trainerHint") },
-  paddles: { label: t("setup.mode.paddles"), hint: t("setup.mode.paddlesHint") },
-  sim: { label: t("setup.mode.sim"), hint: t("setup.mode.simHint") },
+/** Label, hint and the hint's relocalisation key, per mode; the trainer's hint follows the server's stance. */
+const modeText = (webBle = true) => ({
+  trainer: {
+    label: t("setup.mode.trainer"),
+    hint: t(webBle ? "setup.mode.trainerHint" : "setup.mode.serverBike"),
+    hintKey: webBle ? "setup.mode.trainerHint" : "setup.mode.serverBike",
+  },
+  paddles: { label: t("setup.mode.paddles"), hint: t("setup.mode.paddlesHint"), hintKey: "setup.mode.paddlesHint" },
+  sim: { label: t("setup.mode.sim"), hint: t("setup.mode.simHint"), hintKey: "setup.mode.simHint" },
 });
 
 /**
  * The ways to ride this server allows for the picked card. Paddles stay listed in
  * the studio, unavailable with the reason, so the choice doesn't vanish from under the rider.
- * @returns {{id: string, label: string, hint: string, available: boolean, reason: string}[]}
+ * When the server's bike is the standard trainer, the trainer card points there, not at Bluetooth.
+ * @returns {{id: string, label: string, hint: string, hintKey: string, available: boolean, reason: string}[]}
  */
 export function rideModes({ info, picked }) {
   const ids = ["trainer"];
@@ -23,7 +30,7 @@ export function rideModes({ info, picked }) {
   if (info?.simulated_trainer !== false) ids.push("sim");
   return ids.map((id) => {
     const unavailable = id === "paddles" && picked?.kind === "studio";
-    return { id, ...modeText()[id], available: !unavailable, reason: unavailable ? t("setup.studioNeedsTrainer") : "" };
+    return { id, ...modeText(clientDevices(info))[id], available: !unavailable, reason: unavailable ? t("setup.studioNeedsTrainer") : "" };
   });
 }
 
@@ -39,9 +46,9 @@ export function chooseRideMode(saved, modes, bluetooth, { serverBike = false } =
   return ["paddles", "sim"].find(usable) ?? "trainer";
 }
 
-/** Heart rate and controller go with Bluetooth riding; the workout keeps heart rate only. */
-export function addonsShown(mode, bluetooth, picked) {
-  if (!bluetooth) return { hr: false, controller: false };
+/** Heart rate and controller go with Web Bluetooth riding; the workout keeps heart rate only. */
+export function addonsShown(mode, webBle, picked, clientDevicesOn = true) {
+  if (!webBle || !clientDevicesOn) return { hr: false, controller: false };
   if (picked?.kind === "workout") return { hr: true, controller: false };
   const riding = mode !== "paddles";
   return { hr: riding, controller: riding };

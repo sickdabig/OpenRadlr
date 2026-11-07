@@ -51,6 +51,13 @@ answers the vendor ATT error 0x20, and pairing is neither needed nor answered),
 and ~1 Hz packets with power, cadence, resistance and a distance
 counter, all big-endian.
 
+Standard for a server with a bike of its own: the browser's Web Bluetooth
+device UX collapses (`/api/info`: `client_devices: false`) — the trainer card
+becomes "Server's bike", the chooser, add-ons and Bluetooth warnings go. A
+household where a rider still wants their own trainer in the browser sets
+`OPENRADLR_CLIENT_DEVICES=on`; servers without a bike always offer client
+devices, whatever the flag says.
+
 The bike's connection is the server's business, the origin of the readings is
 honest-theft-proof: the client gets `bike` messages and rides them like any
 power-only trainer (the S3's brake knob is mechanical — no remote resistance).

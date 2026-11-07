@@ -18,24 +18,28 @@ decision about which client experience it offers, told to the browser.
 
 ## Decision
 
-The server gains one config flag, and the client collapses its device
-connecting UI accordingly.
+The server decides, through one config flag, and tells the browser in
+`/api/info`.
 
-- **Server:** `OPENRADLR_CLIENT_DEVICES` = `on` (default) | `off`.
-  Additive field in `/api/info`: `"client_devices": true | false`.
-  Protocol stays version 2 (additive), `docs/protocol.md` notes the field.
-- **Client:** when `client_devices` is false and the server offers a bike:
-  - the connect/reconnect rows for trainer, HR strap and controller vanish;
-  - the Heart rate / Controller add-on rows never show;
-  - the "Smart trainer · Bluetooth" card's hint reads **"Server's bike"**;
-  - the trainer panel shows only the server-bike line, the live reading and
-    the power-only note — ride it like today: click once, auto-claim after;
-  - known-device auto-reconnect for BLE devices is skipped (nothing there to
-    reconnect — that path ran only with a persisted grant anyway);
-  - paddles and simulator stay, unchanged (guests without any gear);
-  - the Bluetooth warning machinery goes quiet (the bike rides without it).
+- **Server:** `OPENRADLR_CLIENT_DEVICES` = `off` (default) | `on`.
+  `client_devices` in `/api/info` is the computed verdict, additive, protocol
+  stays version 2 (`docs/protocol.md` notes it): **always yes when the server
+  has no bike of its own** (riders must bring devices), else the flag.
+- **Client:** `clientDevices(info)` (startMenu.js) reads that verdict;
+  `webBle()` in main.js amplifies it with the browser's Web Bluetooth
+  availability and drives, in `renderRideModes`:
+  - the connect/reconnect rows for trainer, HR strap and controller hide
+    (the `.no-bluetooth` class hides all `.bluetooth-only` rows);
+  - the Heart rate / Controller add-on rows never show (`addonsShown`);
+  - the "Smart trainer" card's hint reads **"Server's bike"**, not Bluetooth;
+  - the Bluetooth warning stays silent — nothing about the browser is the
+    rider's fault when the answer is "there is nothing to connect here";
+  - known-device auto-reconnect is skipped (`initKnownDevices`).
+- Paddles and simulator stay, unchanged (guests without any gear); the
+  server-bike line, the live reading and the power-only note stay; riding the
+  bike is unchanged: click once, auto-claim after.
 - Everything else — diagnostics, settings, gear fields for real trainers —
-  is untouched and returns with the flag on.
+  returns with the flag `on` or a server without a bike.
 
 ## Consequences
 

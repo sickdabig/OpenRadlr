@@ -166,3 +166,12 @@ test("why the warning: a non-secure page hides Web Bluetooth (even in Chrome), a
   assert.equal(bluetoothUnavailableReason({ secure: false }), "start.needSecureOrigin");
   assert.equal(bluetoothUnavailableReason({ secure: true }), "start.useChrome");
 });
+
+test("a collapsed server never shows the browser's peripheral rows: no add-ons, and the trainer card says the bike's place", () => {
+  const info = { bike: { kind: "yesoul" }, client_devices: false };
+  const modes = rideModes({ info, picked: road });
+  assert.equal(modes[0].hint, "Server's bike");
+  // add-ons follow the fourth parameter: nothing to connect when collapsed
+  assert.deepEqual(addonsShown("trainer", true, road, false), { hr: false, controller: false });
+  assert.deepEqual(addonsShown("trainer", true, road, true), { hr: true, controller: true });
+});

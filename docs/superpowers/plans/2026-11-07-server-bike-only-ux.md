@@ -22,68 +22,66 @@ Node test runner for both, no build step on the client.
 
 Decisions made here that refine the spec:
 
-- The flag is `on` unless the value reads exactly `off` (forgiving parse, like
-  `OPENRADLR_BIKE`'s).
-- The client gates on `info.client_devices === false && info.bike`: with no
-  bike offered, even a `client_devices: false` server still shows the full
-  device UI (a server may disable devices before plugging the bike in;
-  showing nothing to connect would strand such riders).
-- The trainer-status line ("No trainer connected") keeps working and shows in
-  server-bike mode; only the *action rows* for browser-BLE devices hide.
+- The flag is `on` or `off`, anything else (unset included) reads as `off` —
+  collapsed is the standard for a bike server, per the owner's call.
+- `/api/info`'s `client_devices` is computed, not the raw flag: always `true`
+  without a bike, else the flag. One field, one truth, no client-side
+  combination logic.
+- `clientDevices(info)` never collapses on missing info (`undefined` info =
+  full UI): the first paint renders as today, the answer collapses it.
 
 ## Tasks
 
 ### Server
 
 - [ ] **1. Config: `OPENRADLR_CLIENT_DEVICES`.**
-  `config.rs`: read the key, forgiving parse, default `true`; serialize in
-  `Info`/`/api/info` as `client_devices`. Failing test first: config round-trip
-  (`off` → false, unset → true, garbage → true). Run
-  `cargo test -p openradlr-server config` to see it pass.
+  `config.rs`: `reader.flag("OPENRADLR_CLIENT_DEVICES", false)` — forgiving
+  parse, collapsed standard (`allow_client_devices`). Failing test first:
+  config round-trip (`on` → true, `off`/unset → false, garbage → error). Run
+  `cargo test -p openradlr-server --lib config::` to see it pass.
 
 - [ ] **2. Protocol doc + e2e.**
   `docs/protocol.md`: add `/api/info` field `client_devices` (bool, additive,
-  v2 unchanged). `server/crates/server/tests/`: extend the existing
-  `/api/info` e2e with the field (asserts present, default true; false with
-  the env set). `make check` green.
+  v2 unchanged) — computed: always yes without a bike. `server/crates/server/
+  tests/websocket_flow.rs`: a bike-less server answers `true` (CI; runs
+  without the cargo feature); with a bike, the answer follows the flag —
+  `#[cfg(feature = "bike")]`, verified with
+  `cargo test --features bike --test websocket_flow`.
 
-### Client
-
-- [ ] **3. Pure helper: `clientDevices(info)`.**
-  In `js/view/startMenu.js`: `export function clientDevices(info)` returns
-  `info?.client_devices !== false || !info?.bike` — the read-side of the gate,
-  the one place with the "no bike offered → keep full UI" nuance. Node test in
-  `test/startMenu.test.js` (fail first).
+- [ ] **3. Pure helper `clientDevices(info)`.**
+  In `js/view/startMenu.js`: `!info?.bike || Boolean(info?.client_devices)` —
+  old servers (no field) keep the full UI, missing info never collapses.
+  Node test in `test/clientDevices.test.js` (fail first).
 
 - [ ] **4. Hide the browser-BLE action rows.**
-  `main.js`: carry `const webBle = isBluetoothAvailable() && clientDevices(app.info)`
-  into `renderRideModes`/`renderServerBike`; hide `#trainer-panel .device-line`
-  (connect/reconnect row) and the `#bluetooth-warning` whenever `!webBle`.
-  `renderServerBike` shows the bike line exactly as today. Manual-verify with
-  `make dev` + a screenshot; behavior with the flag unset must not change
-  (regression check against the existing screenshot flow).
+  `main.js`: `webBle()` = availability && `clientDevices(app.info)`; toggles
+  the `.no-bluetooth` class (CSS hides every `.bluetooth-only` row: the
+  connect row and the add-on wrappers), silences the warning where the
+  browser isn't the problem, and replaces the boot-time warning/disable
+  block. `renderServerBike` shows the bike line exactly as today, and
+  `useServerBike` names the bike in the trainer status line. Manual-verify
+  with a screenshot; unset-flag behavior must not change (regression check
+  against the existing screenshot flow).
 
 - [ ] **5. Add-ons never show.**
-  `addonsShown(mode, bluetooth, picked)` gains a 4th param `clientDevices` and
-  returns `{ hr: false, controller: false }` when false. TDD in
-  `test/deviceSetup.test.js`; wire in `renderRideModes`.
+  `addonsShown(mode, webBle, picked, clientDevicesOn = true)` returns
+  `{ hr: false, controller: false }` when either gate says no. TDD in
+  `test/deviceSetup.test.js`; wired in `renderRideModes`.
 
 - [ ] **6. Trainer card hint: "Server's bike".**
-  `rideModes({ info, picked })`: when client devices are off, the trainer
-  entry's `hint` is `t("setup.mode.serverBike")` instead of the Bluetooth
-  hint. i18n keys `setup.mode.serverBike`: en `"Server's bike"`, de
-  `"Bike des Servers"`. TDD (both the helper and key parity), then wire.
+  `rideModes({ info, picked })`: when `clientDevices(info)` is false, the
+  trainer entry's `hint` is `t("setup.mode.serverBike")` instead of the
+  Bluetooth hint. i18n keys `setup.mode.serverBike`: en `"Server's bike"`, de
+  `"Bike des Servers"`. TDD (both the helper and key parity), then wired.
 
 - [ ] **7. Skip BLE auto-reconnect.**
-  `initKnownDevices([...])` call sites: don't attempt `getDevices()` reconnects
-  when `!webBle` (they can never match; one less rejected promise at start).
-  Node-tested indirectly via `knownDevices` tests if they exist; otherwise a
-  guard assertion in the existing deviceSetup tests is enough. Document in
-  `docs/devices.md` server-bike section: the flag's rider-visible effect.
+  `initKnownDevices` returns before `grantedDevices()` when `!webBle()` —
+  nothing there to reconnect on a collapsed server. `docs/devices.md`
+  documents the flag's rider-visible effect.
 
 - [ ] **8. CHANGELOG + wrap-up.**
-  `[Unreleased] > Added`: the flag and the collapsed UX, with the nuance about
-  a disabled flag without a bike still offering the full UI. `make check`.
+  `[Unreleased]`: the flag and the collapsed standard, with the nuance that
+  servers without a bike always offer client devices. `make check`.
 
 ## Out of scope
 
