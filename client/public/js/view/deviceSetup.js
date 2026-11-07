@@ -27,11 +27,15 @@ export function rideModes({ info, picked }) {
   });
 }
 
-/** The remembered way to ride while it's available, else what this browser can do best. */
-export function chooseRideMode(saved, modes, bluetooth) {
+/**
+ * The remembered way to ride while it's available, else what this browser can do best.
+ * A bike the server owns rides without browser Bluetooth, so with one offered the
+ * trainer panel stays the way in even in a browser without Web Bluetooth.
+ */
+export function chooseRideMode(saved, modes, bluetooth, { serverBike = false } = {}) {
   const usable = (id) => modes.some((mode) => mode.id === id && mode.available);
   if (usable(saved)) return saved;
-  if (bluetooth) return "trainer";
+  if (bluetooth || serverBike) return "trainer";
   return ["paddles", "sim"].find(usable) ?? "trainer";
 }
 
@@ -41,6 +45,16 @@ export function addonsShown(mode, bluetooth, picked) {
   if (picked?.kind === "workout") return { hr: true, controller: false };
   const riding = mode !== "paddles";
   return { hr: riding, controller: riding };
+}
+
+/**
+ * The warning's second line: why this page has no Web Bluetooth. A page that
+ * isn't a secure origin (no https, not localhost) never gets navigator.bluetooth,
+ * even in Chrome or Edge — hiding the browser from blame is then misleading.
+ * `secure`: the page's isSecureContext.
+ */
+export function bluetoothUnavailableReason({ secure }) {
+  return secure ? "start.useChrome" : "start.needSecureOrigin";
 }
 
 /**

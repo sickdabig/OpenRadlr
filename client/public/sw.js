@@ -41,6 +41,16 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached ?? caches.match("/index.html"))),
+      .catch((error) =>
+        caches.match(request).then((cached) => {
+          if (cached) return cached;
+          // Only a page navigation may fall back to the index shell. Anything
+          // else (module scripts, styles, images) re-throws so the original
+          // network error surfaces in the console instead of the shell body
+          // arriving with a text/html MIME type for every subresource.
+          if (request.mode === "navigate") return caches.match("/index.html");
+          throw error;
+        }),
+      ),
   );
 });

@@ -675,6 +675,7 @@ export default {
   "start.code": "Code",
   "start.climbFeelHowMuch": "Berggefühl: wie viel von jedem Anstieg die Rolle simuliert",
   "start.virtualShifting": "Virtuelles Schalten",
+  "start.needSecureOrigin": "Diese Seite ist kein sicherer Ursprung (kein https, kein localhost), daher verbirgt der Browser Web Bluetooth. Öffne die App auf dem Server-Rechner mit http://localhost:7777 oder stell sie per https bereit; dann erreichen Chrome und Edge Bluetooth-Rollen. Handy-Paddles funktionieren überall.",
   "start.useChrome": "Nutze Chrome oder Edge auf Android, Windows, macOS oder ChromeOS. iPhone, iPad, Safari und Firefox können das nicht, aber Handy-Paddles funktionieren überall.",
   "start.shiftWith": "Schalte mit +/− am Zwift Click, E/Q oder den Tasten auf dem Bildschirm.",
   "start.setPower": "Stelle deine Leistung mit ↑/↓ ein (oder mit den Tasten auf dem Bildschirm). Zum Ausprobieren von OpenRadlr: kein Strava-Upload.",

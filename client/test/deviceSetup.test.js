@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addonsShown, chooseRideMode, connectErrorText, controllerCheck, controllerLine, controllerSide, deviceActions, expectsOtherHalf, liveCheck, missingHalfHint, needsDownButton, remapForDown, DOWN_BUTTON, rideModes } from "../public/js/view/deviceSetup.js";
+import { addonsShown, bluetoothUnavailableReason, chooseRideMode, connectErrorText, controllerCheck, controllerLine, controllerSide, deviceActions, expectsOtherHalf, liveCheck, missingHalfHint, needsDownButton, remapForDown, DOWN_BUTTON, rideModes } from "../public/js/view/deviceSetup.js";
 
 const road = { id: "col" };
 const studio = { id: "spin-studio", kind: "studio" };
@@ -38,6 +38,14 @@ test("a remembered choice that isn't available here falls back like no choice", 
   assert.equal(chooseRideMode("paddles", rideModes({ info: {}, picked: studio }), true), "trainer");
   assert.equal(chooseRideMode("sim", rideModes({ info: { simulated_trainer: false }, picked: road }), false), "paddles");
   assert.equal(chooseRideMode("bogus", rideModes({ info: {}, picked: road }), true), "trainer");
+});
+
+test("the server's own bike needs no browser Bluetooth: a browser without it is still steered to the trainer panel", () => {
+  assert.equal(chooseRideMode(null, rideModes({ info: {}, picked: road }), false, { serverBike: true }), "trainer");
+  // The server bike never overrules a rider's own pick.
+  assert.equal(chooseRideMode("paddles", rideModes({ info: {}, picked: road }), false, { serverBike: true }), "paddles");
+  // With browser Bluetooth the choice is the same; the flag only opens the door.
+  assert.equal(chooseRideMode(null, rideModes({ info: {}, picked: road }), true, { serverBike: false }), "trainer");
 });
 
 test("heart rate and controller are add-ons to Bluetooth riding: not with paddles, heart rate alone for the workout", () => {
@@ -152,4 +160,9 @@ test("while needed, B on the right half shifts down (BikeControl's right-side ma
   assert.deepEqual(remapForDown(["b", "shiftUp"], true), ["shiftDown", "shiftUp"]);
   assert.deepEqual(remapForDown(["b"], false), ["b"]);
   assert.deepEqual(remapForDown(["a"], true), ["a"]);
+});
+
+test("why the warning: a non-secure page hides Web Bluetooth (even in Chrome), a browser without it is just old news", () => {
+  assert.equal(bluetoothUnavailableReason({ secure: false }), "start.needSecureOrigin");
+  assert.equal(bluetoothUnavailableReason({ secure: true }), "start.useChrome");
 });

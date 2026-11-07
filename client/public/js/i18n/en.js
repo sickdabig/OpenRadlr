@@ -675,6 +675,7 @@ export default {
   "start.code": "Code",
   "start.climbFeelHowMuch": "Climb feel: how much of each climb the trainer simulates",
   "start.virtualShifting": "Virtual shifting",
+  "start.needSecureOrigin": "This page isn't a secure origin (not https, not localhost), so the browser hides Web Bluetooth. Open the app on the server machine as http://localhost:7777, or serve it over https, then Chrome and Edge reach Bluetooth trainers. Phone paddles work everywhere.",
   "start.useChrome": "Use Chrome or Edge on Android, Windows, macOS or ChromeOS. iPhone, iPad, Safari and Firefox can't, but phone paddles work everywhere.",
   "start.shiftWith": "Shift with +/− on a Zwift Click, E/Q or the buttons on screen.",
   "start.setPower": "Set your power with ↑/↓ (or on-screen buttons). For trying OpenRadlr out: no Strava upload.",

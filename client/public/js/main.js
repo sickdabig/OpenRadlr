@@ -8,7 +8,7 @@ import { DeviceLog, deviceLogOptions } from "./ble/deviceLog.js";
 import { ServerBikeTrainer } from "./ble/serverBike.js";
 import { HeartRateMonitor, PaddleTrainer, SimulatedTrainer, SmartTrainer, canExportRide, couldControlResistance, deviceKind, hasRealPowerSource, isBluetoothAvailable } from "./ble/devices.js";
 import { KnownDevices, grantedDevices, whenInRange } from "./ble/knownDevices.js";
-import { addonsShown, chooseRideMode, connectErrorText, controllerCheck, controllerLine, deviceActions, expectsOtherHalf, liveCheck, missingHalfHint, needsDownButton, remapForDown, rideModes } from "./view/deviceSetup.js";
+import { addonsShown, bluetoothUnavailableReason, chooseRideMode, connectErrorText, controllerCheck, controllerLine, deviceActions, expectsOtherHalf, liveCheck, missingHalfHint, needsDownButton, remapForDown, rideModes } from "./view/deviceSetup.js";
 import { ZwiftController } from "./ble/zwiftController.js";
 import { ControllerInput, MergedControllers, controllerNavigates } from "./input/controller.js";
 import { activateFocused, focusableIn, moveFocus } from "./input/focusNav.js";
@@ -594,6 +594,9 @@ function initSetup() {
 
   if (!isBluetoothAvailable()) {
     $("bluetooth-warning").hidden = false;
+    // Say why: a non-secure page hides Web Bluetooth even in Chrome (and the
+    // fix — open it as localhost, or serve https — differs from "use Chrome").
+    $("bluetooth-warning-reason").textContent = t(bluetoothUnavailableReason({ secure: Boolean(globalThis.isSecureContext) }));
     // Buttons that can't work here only get in the way (an iPhone never gets Bluetooth).
     $("profile-form").classList.add("no-bluetooth");
     $("connect-trainer").disabled = true;
@@ -1142,7 +1145,7 @@ function renderRideModes() {
   const picked = pickRoute(routesOf(app.info), app.routeId);
   const bluetooth = isBluetoothAvailable();
   const modes = rideModes({ info: app.info, picked });
-  const mode = chooseRideMode(app.rideMode, modes, bluetooth);
+  const mode = chooseRideMode(app.rideMode, modes, bluetooth, { serverBike: Boolean(app.info?.bike) });
   for (const card of document.querySelectorAll(".mode-card")) {
     const entry = modes.find((m) => m.id === card.dataset.mode);
     card.hidden = !entry;
@@ -1210,6 +1213,9 @@ function renderServerBike() {
   const bike = app.info?.bike;
   $("server-bike-hint").textContent = bike ? t("start.serverBikeHint", { bike: bikeName(bike.kind) }) : "";
   $("server-bike-line").hidden = !bike || Boolean(app.trainer);
+  // A browser without Web Bluetooth that can ride the server's bike stays quiet:
+  // "can't reach Bluetooth trainers" would only send them chasing the wrong thing.
+  if (!isBluetoothAvailable()) $("bluetooth-warning").hidden = Boolean(bike);
 }
 
 /** Uses the bike the server itself is connected to (ADR 0020). */
@@ -1463,6 +1469,12 @@ function notify(text, kind = "event") {
 
 // ---------------------------------------------------------- diagnostics ---
 
+/** For the report: was Web Bluetooth reachable here, and if not, why not. */
+function webBluetoothNote() {
+  if (isBluetoothAvailable()) return "available"; // i18n-ok
+  return globalThis.isSecureContext ? "unavailable: this browser has no Web Bluetooth" : "unavailable: insecure origin (needs https or localhost)"; // i18n-ok
+}
+
 function initDiagnostics() {
   $("build-label").addEventListener("click", () => {
     const details = buildLabel(app.info, BUILD).details;
@@ -1478,6 +1490,7 @@ function initDiagnostics() {
     $("diagnostics-log").textContent = deviceLog.report({
       userAgent: navigator.userAgent,
       build: buildLabel(app.info, BUILD).details,
+      webBluetooth: webBluetoothNote(),
     });
     const total = Object.values(deviceLog.packets).reduce((sum, n) => sum + n, 0);
     $("trainer-packets").textContent = total ? tn("diagnostics.packets", total) : "";
@@ -1496,7 +1509,7 @@ function initDiagnostics() {
   deviceLog.on("packet", schedule);
 
   const copy = async (button) => {
-    const text = deviceLog.report({ userAgent: navigator.userAgent });
+    const text = deviceLog.report({ userAgent: navigator.userAgent, webBluetooth: webBluetoothNote() });
     try {
       await navigator.clipboard.writeText(text);
       button.textContent = t("diagnostics.copied");

@@ -71,6 +71,7 @@ export class DeviceLog extends Emitter {
       `OpenRadlr device diagnostics`, // i18n-ok
       ...(extra.build ? [`Build: ${extra.build}`] : []), // i18n-ok
       `User agent: ${extra.userAgent ?? "unknown"}`, // i18n-ok
+      ...(extra.webBluetooth ? [`Web Bluetooth: ${extra.webBluetooth}`] : []), // i18n-ok
       `Packets: ${JSON.stringify(this.packets)}`, // i18n-ok
       ...(this.capture.size ? [`Capturing: ${[...this.capture].join(", ")} (every packet)`] : []), // i18n-ok
       "",
