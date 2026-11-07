@@ -15,19 +15,16 @@ separate from `client/`, which stays dependency-free.
 
 ## Build and run
 
-With Docker only (as on the server), from the repository root:
-
-```bash
-COMPOSE_PROFILES=landing docker compose up -d --build landing   # http://localhost:8081
-```
-
 With Node 22.12+ installed, in `landing/`:
 
 ```bash
 npm ci
 npm run dev       # http://localhost:4321, reloads on save
-npm run build     # static files in dist/
+PUBLIC_APP_URL=https://app.example.org npm run build   # static files in dist/
 ```
+
+Serve `dist/` with any static file server (Caddy, nginx, a CDN) and point the
+domain at it; see [docs/deploy.md](../docs/deploy.md#landing-page).
 
 ## Settings (build time)
 
@@ -41,8 +38,8 @@ npm run build     # static files in dist/
 | `PUBLIC_PLAUSIBLE_DOMAIN` | – | cookie-free Plausible analytics; without it no script is loaded |
 | `PUBLIC_PLAUSIBLE_SCRIPT` | Plausible Cloud (`https://plausible.io/js/script.js`) | script URL, e.g. your own instance |
 
-Docker Compose fills them from `.env` (`OPENRADLR_LANDING_URL`,
-`OPENRADLR_PUBLIC_URL`, `OPENRADLR_DISCORD_URL`, `OPENRADLR_PRIVACY_URL`,
-`OPENRADLR_LANDING_IMPRINT_URL`,
-`OPENRADLR_LANDING_PLAUSIBLE_DOMAIN`, and `PUBLIC_PLAUSIBLE_SCRIPT` from
-`OPENRADLR_ANALYTICS_SCRIPT`, the same script the app uses). Deployment: [docs/deploy.md](../docs/deploy.md#landing-page).
+Set them in the environment when running `npm run build` (or `npm run dev`);
+Astro bakes them into the page at build time. `PUBLIC_PLAUSIBLE_SCRIPT` defaults
+to Plausible Cloud — set it to your own instance's script URL if you self-host
+Plausible (the same script the app loads via `OPENRADLR_ANALYTICS_SCRIPT`).
+Deployment: [docs/deploy.md](../docs/deploy.md#landing-page).

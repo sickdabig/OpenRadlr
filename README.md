@@ -11,10 +11,10 @@
 </p>
 
 Hook up a smart trainer, open the browser and ride a virtual route together with
-others. Every server is just a Docker container: run it at home for your LAN, on
-a VPS for your club, or join a public one. This repository contains the
-**proof of concept**: a Rust game server and a browser client (installable as
-an app) with a 3D and a 2D view.
+others. Run your own server at home for your LAN, on a VPS for your club, or
+join a public one. This repository contains the **proof of concept**: a Rust
+game server and a browser client (installable as an app) with a 3D and a 2D
+view.
 
 <p align="center">
   <a href="https://github.com/Lethonium/OpenRadlr/actions/workflows/ci.yml"><img src="https://github.com/Lethonium/OpenRadlr/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
@@ -33,15 +33,16 @@ an app) with a 3D and a 2D view.
 
 ## Quick start
 
-Requirements: Docker with Compose v2 and `make`. Rust and Node are optional.
+Requirements: Rust (cargo), Node.js with npm, and `make`.
 
 ```bash
-make up
+make dev
 ```
 
-Then open **http://localhost:8080** in Chrome or Edge, enter a name, connect your
-trainer (or pick *Simulated trainer*) and join. The first `make up` copies
-`.env.example` to `.env`; adjust it and run `make up` again to apply changes.
+Then open **http://localhost:7777** in Chrome or Edge, enter a name, connect your
+trainer (or pick *Simulated trainer*) and join. Optional settings live in `.env`
+(`make setup` copies `.env.example` to `.env`, and adds new settings on later
+runs) — `make dev` reads the Strava keys from it.
 
 | Control | Action |
 | --- | --- |
@@ -112,17 +113,12 @@ Run `make` to list everything. The most important ones:
 
 | Command | What it does |
 | --- | --- |
-| `make up` | Build and start in the background, wait until healthy |
-| `make down` | Stop and remove the containers |
-| `make logs` | Follow the logs |
-| `make update` | `git pull`, rebuild, restart, wait until healthy |
+| `make setup` | Create `.env` from `.env.example` (later runs add new settings) |
 | `make test` | All tests (Rust and JavaScript) |
 | `make lint` | rustfmt, clippy (`-D warnings`), ESLint |
 | `make check` | Everything CI runs |
-| `make dev` | Run the server with local cargo, no Docker |
+| `make dev` | Run the server locally with cargo on http://localhost:7777 |
 | `make lock` | Create `server/Cargo.lock` — run once and commit it |
-
-If `cargo` or `npm` is not installed, the test and lint targets run them in Docker.
 
 ## Deploying to a server
 
@@ -132,38 +128,37 @@ Full guide, including your own reverse proxy and Strava: [docs/deploy.md](docs/d
 git clone <your-repo-url> openradlr && cd openradlr
 make setup            # creates .env (later: adds new settings to it)
 $EDITOR .env          # set OPENRADLR_SERVER_NAME etc.
-make up
+cd server && cargo build --release
 ```
 
-Later, to deploy new commits: `make update`.
+Then run `server/target/release/openradlr-server` with the settings from `.env`
+in its environment plus the paths to the client, the routes and the data
+directory (`OPENRADLR_STATIC_DIR`, `OPENRADLR_ROUTES_DIR`,
+`OPENRADLR_ROUTE_FILE`, `OPENRADLR_DATA_DIR`) — docs/deploy.md has a complete
+example and a systemd unit. To deploy new commits: `git pull`, rebuild, restart
+the service.
 
 The server exposes aggregate Prometheus metrics at `/internal/metrics` for
 connected riders, configured rider capacity, community distance totals and AFK
 warning outcomes (`openradlr_afk_events_total`). The
-endpoint contains no rider names, IDs, credentials or request details. The
-Monitoring stack scrapes it over the private `openradlr-metrics` Docker
-network; its Grafana dashboard also probes the public `/healthz` URL.
+endpoint contains no rider names, IDs, credentials or request details. Scrape
+it from your monitoring stack; probe the public `/healthz` URL for liveness.
 
 **HTTPS:** browsers only allow Web Bluetooth on `https://` pages or on
 `http://localhost`. For a public server, point a DNS record at the machine and
-set in `.env`:
-
-```bash
-COMPOSE_PROFILES=tls
-OPENRADLR_DOMAIN=ride.example.org
-```
-
-`make up` then also starts Caddy, which obtains a Let's Encrypt certificate and
-proxies to the game server. Ports 80 and 443 must be reachable.
+put a reverse proxy with TLS in front of the server (a Caddy example is in
+[docs/deploy.md](docs/deploy.md)); ports 80 and 443 must be reachable.
 
 **Landing page (optional):** the official server runs a static page on the
 main domain and the app on a subdomain (openradlr.com and app.openradlr.com).
-Add `landing` to `COMPOSE_PROFILES` and set `OPENRADLR_LANDING_DOMAIN`; see
-[docs/deploy.md](docs/deploy.md#landing-page). Without it nothing changes.
+Build it with npm in `landing/` and serve `landing/dist` statically next to the
+app; see [docs/deploy.md](docs/deploy.md#landing-page).
 
-**LAN parties:** set `OPENRADLR_HTTP_BIND=0.0.0.0`. Other machines reach the page
-via `http://<your-ip>:8080`, but their browsers block Bluetooth on plain HTTP.
-Use the TLS profile with a real domain, or for quick tests enable
+**LAN / Tailscale:** the server listens on all interfaces by default
+(`OPENRADLR_BIND=0.0.0.0:8080`), so other machines reach the page via
+`http://<your-ip>:8080` or your Tailscale address — but their browsers block
+Bluetooth on plain HTTP. Put the server behind TLS with a real domain, or for
+quick tests enable
 `chrome://flags/#unsafely-treat-insecure-origin-as-secure` for that address.
 
 ## Configuration
@@ -197,9 +192,8 @@ All settings live in `.env`; see [`.env.example`](.env.example) for descriptions
 | `OPENRADLR_MAX_RACE_LAPS` | `20` | Upper limit for race laps |
 | `OPENRADLR_BOT_SEED` | random | Fixed seed for reproducible bots |
 | `OPENRADLR_AUTH_MODE` | `open` | Only `open` (local profiles) in the POC |
-| `OPENRADLR_HTTP_BIND` / `OPENRADLR_HTTP_PORT` | `127.0.0.1` / `8080` | Where the web client is published |
-| `COMPOSE_PROFILES`, `OPENRADLR_DOMAIN` | – | Enable HTTPS via Caddy (`tls`), the landing page (`landing`) |
-| `OPENRADLR_LANDING_DOMAIN` / `_URL` | – | Domain(s) and address of the landing page |
+| `OPENRADLR_BIND` | `0.0.0.0:8080` | Interface and port for the web client and WebSocket — all interfaces by default, so LAN/Tailscale reach it; `127.0.0.1:8080` when only a local proxy may connect |
+| `OPENRADLR_DATA_DIR` | – | Where Strava logins and the distance totals are kept (lost on restart without it) |
 | `RUST_LOG` | `info` | Log level |
 
 ## Project layout
@@ -214,9 +208,8 @@ All settings live in `.env`; see [`.env.example`](.env.example) for descriptions
 │   └── test/               client unit tests (node:test)
 ├── routes/                 route files (JSON), shared by server and clients
 ├── landing/                landing page for the main domain (Astro, static)
-├── deploy/Caddyfile        HTTPS reverse proxy
 ├── docs/                   architecture, protocol, devices, decisions
-├── Dockerfile, docker-compose.yml, Makefile, .env.example
+├── Makefile, .env.example
 └── .github/workflows/ci.yml
 ```
 

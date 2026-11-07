@@ -1,8 +1,0 @@
-.git
-.github
-.env
-**/target
-**/node_modules
-client/test
-docs
-*.md

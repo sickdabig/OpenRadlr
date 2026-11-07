@@ -1,19 +1,66 @@
 # Deploying OpenRadlr
 
-A server is one Docker container. It serves the browser client, the routes and
-the WebSocket game on one port (8080 inside the container). TLS belongs to a
-reverse proxy in front of it: browsers only allow Bluetooth on `https://` pages.
+The server is one binary. It serves the browser client, the routes and the
+WebSocket game on one port (8080 by default). By default it listens on all
+interfaces (`OPENRADLR_BIND=0.0.0.0:8080`), so a LAN or Tailscale network can
+reach it directly; behind a reverse proxy, bind to `127.0.0.1:8080` instead.
+TLS belongs to the proxy in front of it: browsers only allow Bluetooth on
+`https://` pages.
 
-## Behind your own Caddy (recommended for production)
-
-### 1. The OpenRadlr server
+## 1. Build and run the server
 
 ```bash
 git clone <your-repo-url> openradlr && cd openradlr
 make setup          # creates .env from .env.example; later runs add new settings
 $EDITOR .env
-make up
+cd server && cargo build --release && cd ..
 ```
+
+Run the binary with the settings from `.env` in its environment, plus the
+paths to the client, the routes and the data directory:
+
+```bash
+set -a; . ./.env; set +a
+export OPENRADLR_STATIC_DIR=client/public \
+       OPENRADLR_ROUTES_DIR=routes \
+       OPENRADLR_ROUTE_FILE=routes/rolling-hills.json \
+       OPENRADLR_DATA_DIR=data
+server/target/release/openradlr-server
+```
+
+`OPENRADLR_DATA_DIR` is where Strava logins (SQLite) and the community
+distance totals (`stats.json`) are kept, so they survive restarts — back it up
+like any data:
+
+```bash
+tar czf openradlr-data.tgz -C data .
+```
+
+A systemd unit is the usual way to keep it running and restart it on boot:
+
+```ini
+[Unit]
+Description=OpenRadlr game server
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/openradlr
+EnvironmentFile=/opt/openradlr/.env
+Environment=OPENRADLR_STATIC_DIR=/opt/openradlr/client/public \
+            OPENRADLR_ROUTES_DIR=/opt/openradlr/routes \
+            OPENRADLR_ROUTE_FILE=/opt/openradlr/routes/rolling-hills.json \
+            OPENRADLR_DATA_DIR=/opt/openradlr/data
+ExecStart=/opt/openradlr/server/target/release/openradlr-server
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`openradlr-server healthcheck` probes `/healthz` over HTTP — use it as the
+unit's health check or in a load balancer. The server shuts down cleanly on
+SIGTERM.
 
 Settings for production in `.env`:
 
@@ -28,29 +75,21 @@ OPENRADLR_ALLOW_SIMULATED_TRAINER=false    # only real trainers on the start scr
 OPENRADLR_ALLOW_PADDLE_MODE=true           # phone paddles (marked 📱, no Strava, no ride files)
 OPENRADLR_PRIVACY_URL=https://ride.example.org/privacy/  # your privacy policy, linked in the start menu
 OPENRADLR_ANALYTICS_DOMAIN=              # optional Plausible analytics, off when empty (see .env.example)
-OPENRADLR_HTTP_BIND=127.0.0.1              # only the proxy on this machine can reach it
-OPENRADLR_HTTP_PORT=8080
-COMPOSE_PROFILES=                         # leave the bundled Caddy off
+OPENRADLR_BIND=127.0.0.1:8080              # only the proxy on this machine can reach it
+OPENRADLR_DATA_DIR=/opt/openradlr/data     # Strava logins + distance totals
 ```
 
 `OPENRADLR_PUBLIC_URL` also becomes the only page origin allowed to open game
-connections (`OPENRADLR_ALLOWED_ORIGINS` in `docker-compose.yml`). Without it,
+connections (`OPENRADLR_ALLOWED_ORIGINS` defaults to it). Without it,
 any web page may open a game connection to your server, which is fine on a
 home network but not for a public server: always set it there. Only set
 `OPENRADLR_TRUST_PROXY=true` when the proxy is the only way in, otherwise
 anyone could fake their address in the header.
 
-Deploy new commits later with `make update` (git pull, rebuild, restart,
-wait until healthy).
+Deploy new commits later with: `git pull`, `cargo build --release`, restart the
+service. A restart drops everyone who is riding.
 
-`make update`, `make restart` and `make down` drop everyone who is riding, so
-they first ask the running server who is on it. With riders connected you get
-the count and where they ride, and a prompt that defaults to *No* (nothing is
-pulled or changed then). Without a terminal (cron, CI, ssh without a TTY) they
-refuse instead of waiting; add `FORCE=1` (`make update FORCE=1`) to go ahead
-regardless. If no server is running or it does not answer, they continue.
-
-### 2. Caddy on the same machine
+## 2. Caddy on the same machine
 
 Caddy proxies WebSockets and sets `X-Forwarded-For` on its own:
 
@@ -61,80 +100,53 @@ ride.example.org {
 }
 ```
 
-### Caddy in its own container
-
-Put both containers on a shared Docker network instead of publishing a port.
-Next to `docker-compose.yml` create `docker-compose.override.yml` (Compose
-reads it automatically; it is not in git):
-
-```yaml
-services:
-  server:
-    ports: !reset []
-    networks: [default, proxy]
-
-networks:
-  proxy:
-    external: true
-    name: caddy   # the network your Caddy container is on
-```
-
-and point Caddy at the container name:
-
-```caddyfile
-ride.example.org {
-	encode zstd gzip
-	reverse_proxy openradlr-server-1:8080
-}
-```
+Any other reverse proxy (nginx, Traefik) works the same way: terminate TLS,
+proxy everything — HTTP and WebSocket — to the server's port.
 
 ## Landing page
 
 The official server splits into two addresses: a static landing page on the
 main domain (`openradlr.com`, from `landing/`) and the app on a subdomain
-(`app.openradlr.com`). Both run in the same Compose stack. Self-hosters who
-don't want a landing page leave this out; nothing changes for them.
+(`app.openradlr.com`). Self-hosters who don't want a landing page leave this
+out; nothing changes for them.
 
 1. DNS: `A`/`AAAA` records for the bare domain, `www` and `app`, all to the
    server.
-2. `.env`:
+2. Build the page with Node (see [landing/README.md](../landing/README.md)),
+   with the addresses baked in at build time:
 
    ```bash
-   COMPOSE_PROFILES=tls,landing
-   OPENRADLR_DOMAIN=app.openradlr.com
-   OPENRADLR_PUBLIC_URL=https://app.openradlr.com
-   OPENRADLR_LANDING_DOMAIN=openradlr.com, www.openradlr.com
-   OPENRADLR_LANDING_URL=https://openradlr.com
-   OPENRADLR_LANDING_PLAUSIBLE_DOMAIN=openradlr.com   # optional, cookie-free analytics
-   # OPENRADLR_PRIVACY_URL=https://...                # optional, privacy link (start menu + landing footer)
-   # OPENRADLR_LANDING_IMPRINT_URL=https://...        # optional, imprint link in the footer
+   cd landing
+   npm ci
+   PUBLIC_SITE_URL=https://openradlr.com \
+   PUBLIC_APP_URL=https://app.openradlr.com \
+     npm run build        # static files in landing/dist
    ```
 
-3. `make up`. The bundled Caddy serves the landing page on the bare domain,
-   redirects `www.` to it and proxies the app subdomain as before.
+3. Serve `landing/dist` with any static file server and point the bare domain
+   at it. With Caddy:
+
+   ```caddyfile
+   openradlr.com {
+   	encode zstd gzip
+   	root * /opt/openradlr/landing/dist
+   	file_server
+   }
+   www.openradlr.com {
+   	redir https://openradlr.com{uri} permanent
+   }
+   app.openradlr.com {
+   	encode zstd gzip
+   	reverse_proxy 127.0.0.1:8080
+   }
+   ```
+
 4. **Strava:** the *Authorization Callback Domain* in the Strava API settings
    must be the app subdomain (`app.openradlr.com`). Change it when moving the
    app, then check *Connect with Strava* once.
 
-Behind your own Caddy, leave `tls` out of `COMPOSE_PROFILES`; the landing
-container is published on `127.0.0.1:8081` (`OPENRADLR_LANDING_PORT`):
-
-```caddyfile
-openradlr.com {
-	encode zstd gzip
-	reverse_proxy 127.0.0.1:8081
-}
-www.openradlr.com {
-	redir https://openradlr.com{uri} permanent
-}
-app.openradlr.com {
-	encode zstd gzip
-	reverse_proxy 127.0.0.1:8080
-}
-```
-
-The page's links are baked in at build time from `.env`, so run `make up`
-again after changing them. Details: [landing/README.md](../landing/README.md).
+The page's links are baked in at build time, so rebuild it after changing the
+`PUBLIC_*` variables.
 
 ## Strava (optional)
 
@@ -147,15 +159,15 @@ again after changing them. Details: [landing/README.md](../landing/README.md).
    OPENRADLR_STRAVA_CLIENT_ID=12345
    OPENRADLR_STRAVA_CLIENT_SECRET=…
    OPENRADLR_REQUIRE_STRAVA=false   # true: riders must connect Strava to ride
-   OPENRADLR_SECRET_KEY=…           # openssl rand -hex 32; keeps logins across updates
+   OPENRADLR_SECRET_KEY=…           # openssl rand -hex 32; keeps logins across restarts
    ```
 
-3. `make up`.
+3. Restart the server.
 
 To try it locally, copy `.env.dev.example` to `.env.dev` and run `make dev`
 (see the comments in that file). Strava accepts `localhost` and `127.0.0.1` as
 callback domains, so the same Strava app works locally. Open the app at
-`http://localhost:8080` (the `OPENRADLR_PUBLIC_URL` in that file).
+`http://localhost:7777` (the `OPENRADLR_PUBLIC_URL` in that file).
 
 Riders then see *Connect with Strava* on the start screen. After a ride,
 *Finish ride* offers *Upload to Strava* (and `.tcx`, `.gpx` and `.fit` downloads either way).
@@ -167,16 +179,13 @@ With `OPENRADLR_REQUIRE_STRAVA=true` every rider needs a real Strava account,
 and one account can ride only once at a time — a simple hurdle against bots
 and scripts.
 
-Strava logins are saved in a SQLite database on the `data` Docker volume
-(`/app/data`), so riders stay connected through `make update` and restarts.
-Session ids are stored only as hashes and refresh tokens are encrypted with
+Strava logins are saved in a SQLite database in `OPENRADLR_DATA_DIR`
+(`data/` in the example above), so riders stay connected through restarts and
+updates. Session ids are stored only as hashes and refresh tokens are encrypted with
 `OPENRADLR_SECRET_KEY`, which must stay the same across deploys (changing it
 logs everyone out once, which is harmless). Without the key logins stay in
-memory and are lost on every restart. Back the volume up like any data:
-
-```bash
-docker run --rm -v openradlr_data:/data -v "$PWD":/backup alpine tar czf /backup/openradlr-data.tgz -C /data .
-```
+memory and are lost on every restart. Back the directory up like any data
+(`tar czf openradlr-data.tgz -C data .`).
 
 The start menu also shows how far everyone has ridden on the server, on
 trainers and on phones. Only the two kilometre totals are kept, in `stats.json`
@@ -218,12 +227,6 @@ determined cheater.
 
 ## Routes
 
-Every `*.json` file in `routes/` becomes a world riders can pick on the start
-screen; `OPENRADLR_ROUTE` is the default and listed first. Routes are mounted
-read-only, so a new file only needs `make restart`. See [routes](routes.md).
-
-## Without your own proxy
-
-For a server without a reverse proxy, the bundled Caddy can handle TLS:
-`COMPOSE_PROFILES=tls` and `OPENRADLR_DOMAIN=ride.example.org` in `.env`
-(ports 80 and 443 must be reachable).
+Every `*.json` file in `OPENRADLR_ROUTES_DIR` becomes a world riders can pick on the
+start screen; `OPENRADLR_ROUTE` is the default and listed first. Drop a new
+file in and restart the server. See [routes](routes.md).

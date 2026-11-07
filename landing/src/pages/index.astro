@@ -179,15 +179,15 @@ const faq = [
       </div>
       <div class="host-body">
         <p>
-          OpenRadlr is open source and every server is a single Docker container. Run one at home for your LAN, on a
+          OpenRadlr is open source and every server is a single binary. Run one at home for your LAN, on a
           small VPS for your club, or ride on ours. The game server is written in Rust, the client is plain JavaScript.
         </p>
-        <pre><code><span class="muted"># needs Docker with Compose and make</span>
+        <pre><code><span class="muted"># needs Rust, Node and make</span>
 git clone {site.githubUrl}.git
 cd OpenRadlr
-make up</code></pre>
+make dev</code></pre>
         <p>
-          Then open <code>http://localhost:8080</code>. Bug reports, routes and pull requests are welcome
+          Then open <code>http://localhost:7777</code>. Bug reports, routes and pull requests are welcome
           on <a href={site.githubUrl}>GitHub</a>.
         </p>
       </div>

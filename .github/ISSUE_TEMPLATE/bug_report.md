@@ -22,4 +22,4 @@ labels: bug
 
 ## Logs or screenshots
 
-<!-- Browser console output, server logs (`docker compose logs server`), screenshots. -->
+<!-- Browser console output, server logs, screenshots. -->

@@ -2,7 +2,7 @@
 //!
 //! | Route              | Purpose                                              |
 //! |--------------------|------------------------------------------------------|
-//! | `/healthz`         | Liveness probe for Docker and load balancers         |
+//! | `/healthz`         | Liveness probe for load balancers and supervisors   |
 //! | `/api/info`        | Server name, version, players, the routes to pick    |
 //! | `/api/route?id=…`  | A full route file (the default route without `id`)   |
 //! | `/api/map?id=…`    | A shared map's road network file, unchanged          |

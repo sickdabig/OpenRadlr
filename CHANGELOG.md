@@ -24,6 +24,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Riding speeds are calibrated: 200 W on the flat is about 31 km/h for 75 kg, descents are slower, and heavier riders have more air drag (#22).
 - Climb feel no longer applies with virtual shifting; the gears do it (#22).
 
+### Removed
+
+- The Docker deployment path: `Dockerfile`, `docker-compose.yml`, the bundled Caddy and landing containers and the `make up` / `down` / `update` targets are gone, and the Makefile no longer runs cargo/npm in throwaway containers when they are missing — install Rust and Node on the host. Run the release binary directly behind your own reverse proxy; see [docs/deploy.md](docs/deploy.md).
+
 ### Fixed
 - The Yesoul S3 never accepted the server's handshake: the bike answers the init packet written **with** response with its vendor ATT error 0x20 and stays silent (probed against the real bike, missing from the earlier bridge-based doc). The link now subscribes to the telemetry notifications first and writes the init packet without response; pairing takes no part (the bike ignores pairing attempts). The failing handshake also retried at scan speed, hammering the bike — the reconnect pause now applies between attempts.
 - The server's bike link came up never: the scan–reconnect loop started a new BLE scan on every cycle, and BlueZ answers a start while it is already scanning with "Operation already in progress" — the retry treated that as a fatal error and so never reached the point where the bike is looked for. A scan start that finds one already running is kept now.

@@ -16,7 +16,7 @@ be named.
 
 - The game server (WebSocket protocol, HTTP API, Strava login and upload).
 - The browser client.
-- The Docker and deployment files in this repository.
+- The deployment files in this repository (`.env.example`, [docs/deploy.md](docs/deploy.md)).
 
 Out of scope: servers run by others (report those to their operators),
 denial of service by sheer traffic volume, and findings that need a rider to

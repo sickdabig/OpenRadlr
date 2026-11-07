@@ -48,7 +48,7 @@ pub mod studio;
 pub mod vehicle_codes;
 pub mod worlds;
 
-/// Which build is running: set by the Docker build (`OPENRADLR_BUILD_SHA`, `OPENRADLR_BUILD_DATE`).
+/// Which build is running: set via `OPENRADLR_BUILD_SHA` / `OPENRADLR_BUILD_DATE`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct BuildInfo {
     pub sha: String,
@@ -81,7 +81,7 @@ impl BuildInfo {
 pub struct ServerInfo {
     pub name: String,
     pub version: String,
-    /// Git commit and build date of this server (`dev` when built outside Docker).
+    /// Git commit and build date of this server (`dev` when unset).
     pub build: BuildInfo,
     pub auth_mode: String,
     /// The default route, joined when a client doesn't pick one.

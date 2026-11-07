@@ -559,7 +559,8 @@ mod tests {
     #[test]
     fn defaults_are_sensible() {
         let c = config(&[]).unwrap();
-        assert_eq!(c.bind_addr.port(), 8080);
+        // All interfaces by default: the server is meant for LAN and Tailscale use.
+        assert_eq!(c.bind_addr, SocketAddr::from(([0, 0, 0, 0], 8080)));
         assert_eq!(c.tick_hz, 20);
         assert_eq!(c.broadcast_hz, 4);
         assert_eq!(c.target_riders, 12);

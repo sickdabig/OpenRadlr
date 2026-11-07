@@ -43,7 +43,7 @@ async fn main() -> ExitCode {
     }
 }
 
-/// Resolves on Ctrl+C or SIGTERM (sent by `docker stop`).
+/// Resolves on Ctrl+C or SIGTERM.
 async fn shutdown_signal() {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;

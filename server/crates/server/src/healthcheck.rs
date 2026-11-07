@@ -1,5 +1,5 @@
-//! `openradlr-server healthcheck` — a tiny HTTP probe for Docker's
-//! `HEALTHCHECK`, so the runtime image needs no curl or wget.
+//! `openradlr-server healthcheck` — a tiny HTTP probe of `/healthz`, so a
+//! process supervisor needs no curl or wget.
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};

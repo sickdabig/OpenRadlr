@@ -12,6 +12,4 @@
 *.swp
 .DS_Store
 
-# Local deployment tweaks (see docs/deploy.md)
-docker-compose.override.yml
 tools/.cache/
