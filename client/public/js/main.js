@@ -102,6 +102,10 @@ import { VehicleView } from "./view/vehicleView.js";
 import { applyTranslations } from "./i18n/apply.js";
 import { getLocale, initLocale, saveLocale, setLocale, t, tn } from "./i18n/i18n.js";
 import { languageButtonStates } from "./i18n/selector.js";
+import { installErrorReport } from "./net/errorReport.js";
+
+// From here on a crash travels to the server's console, not only the browser's.
+installErrorReport();
 
 const $ = (id) => document.getElementById(id);
 const now = () => performance.now() / 1000;
@@ -122,6 +126,8 @@ const COACH_VOICE_KEY = "openradlr.coach-voice";
 const INFO_REFRESH_MS = 5000;
 const TICKER_ITEMS = 3;
 const TICKER_SECONDS = 9;
+/** The most imports the profile keeps; createWorkout caps each one's size. */
+const MAX_SAVED_WORKOUTS = 25;
 const readSetting = (key) => {
   try {
     return localStorage.getItem(key);
@@ -670,9 +676,6 @@ function pickWorkoutFigure(id, index) {
 }
 
 // ------------------------------------------------ workout library ---
-
-/** The most imports the profile keeps; createWorkout caps each one's size. */
-const MAX_SAVED_WORKOUTS = 25;
 
 /** The imported workouts stored in the profile, re-validated: a broken one leaves the library. */
 function savedWorkouts(stored) {

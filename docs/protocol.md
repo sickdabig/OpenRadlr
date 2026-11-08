@@ -238,6 +238,7 @@ when `OPENRADLR_ALLOWED_ORIGINS` is set and the page's origin isn't listed, and
 | `GET /api/route?id=…` | a route file (see [routes](routes.md)); the default route without `id`, 404 for unknown ids |
 | `GET /api/map?id=…` | a shared map's road network file, unchanged (see [routes](routes.md#road-networks)); 404 for maps without one |
 | `GET /api/studio` | the spin studio: `slot_s` (1800), `lobby_s` (300), `seats_per_room`, `classes[]` (`id`, `name`, `description`, `duration_s`, `segments[]` with `duration_s`, `from`/`to` as a fraction of FTP, `cadence` `[lo, hi]`, `cue`), `schedule[]` (the current slot and the next five: `class_id`, `name`, `starts_at_s`); 404 when the studio is closed |
+| `POST /api/client-error` | body: a crash report from the browser (`message`, optional `source`, `line`, `column`, `stack`); the server logs it to its console and answers 204. No rider identity travels with it, long fields are capped, and the client sends at most 10 reports per page load |
 | `GET /auth/strava` | starts "Connect with Strava" (redirect) |
 | `GET /auth/strava/callback` | Strava sends the rider back here; sets the `openradlr_session` cookie |
 | `POST /auth/logout` | forgets the session |
