@@ -81,6 +81,10 @@ pub enum ClientMessage {
     StartRace {
         laps: u32,
     },
+    /// The spin studio: start a class in the rider's room now (ADR 0011).
+    StartClass {
+        class_id: String,
+    },
     /// Enter the race whose countdown is running.
     JoinRace,
     /// Withdraw from the announced or running race.
@@ -890,7 +894,7 @@ fn vehicle_state(world: &World, v: &Vehicle) -> VehicleState {
 
 /// State of one studio room.
 pub fn studio_state_message(studio: &Studio, room: usize, tick: u64) -> ServerMessage {
-    let clock = studio.clock();
+    let clock = studio.clock_of(room);
     let class = studio.timetable().class(&clock);
     let riders = studio.rooms()[room]
         .riders()
@@ -1044,6 +1048,12 @@ mod tests {
         assert_eq!(
             ClientMessage::parse(r#"{"type":"start_race","laps":2}"#).unwrap(),
             ClientMessage::StartRace { laps: 2 }
+        );
+        assert_eq!(
+            ClientMessage::parse(r#"{"type":"start_class","class_id":"tempo"}"#).unwrap(),
+            ClientMessage::StartClass {
+                class_id: "tempo".into()
+            }
         );
         assert_eq!(
             ClientMessage::parse(r#"{"type":"join","name":"Anna","weight_kg":70,"route_id":"alpine"}"#).unwrap(),

@@ -2370,6 +2370,16 @@ mod tests {
         assert_eq!(error_codes(&sink.take()), vec!["not_in_workout"]);
     }
 
+    #[test]
+    fn a_route_game_ignores_start_class() {
+        let mut game = game(0, 10);
+        let (anna, sink) = join(&mut game, "Anna");
+        sink.take();
+        game.start_class(anna, "tempo");
+        ticks_of(&mut game, 5);
+        assert_eq!(error_codes(&sink.take()), Vec::<String>::new());
+    }
+
     fn exercise_json(sink: &RecordingSink) -> String {
         sink.take()
             .iter()

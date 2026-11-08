@@ -80,7 +80,9 @@ uploaded to Strava.
 - **Browser client** — rides the bike the server itself is connected to over its
   own Bluetooth adapter (e.g. a Yesoul S3), plus a simulated trainer,
   trainer difficulty, virtual shifting (for single-gear setups), a
-  ERG mode with structured workouts (built-in presets and `.zwo` import),
+  ERG mode with structured workouts (built-in presets and `.zwo` import), a
+  workout library on the start menu's Training tab — pick one and start riding
+  it whenever you want, alone or with whoever is out there,
   low-poly 3D view with chase camera, a 2D lane view, an elevation profile, a
   minimap, nearby riders, race panel and chat; live player counts in the start
   menu and during the ride; ride photos and a summary image; ride summary with
@@ -114,6 +116,7 @@ Run `make` to list everything. The most important ones:
 | --- | --- |
 | `make setup` | Create `.env` from `.env.example` (later runs add new settings) |
 | `make test` | All tests (Rust and JavaScript) |
+| `make test-e2e` | Headless browser tests: the real app in Chromium against the real server (once: `npx playwright install chromium`) |
 | `make lint` | rustfmt, clippy (`-D warnings`), ESLint |
 | `make check` | Everything CI runs |
 | `make dev` | Run the server locally with cargo on http://localhost:7777 |
@@ -177,7 +180,7 @@ All settings live in `.env`; see [`.env.example`](.env.example) for descriptions
 | `OPENRADLR_ALLOW_SIMULATED_TRAINER` | `true` | Offer the simulated trainer (set `false` in production) |
 | `OPENRADLR_ALLOW_PADDLE_MODE` | `true` | Offer phone paddles (tap left/right for power; no Strava, no ride files) |
 | `OPENRADLR_PRIVACY_URL` | – | Link to your privacy policy in the start menu |
-| `OPENRADLR_BIKE` | – | A bike the server itself rides over Bluetooth (`yesoul` for the S3); needs a build with `--features bike` near the bike, BlueZ and libdbus — see [devices](docs/devices.md#yesoul-s3-on-the-server) |
+| `OPENRADLR_BIKE` | – | A bike the server itself rides over Bluetooth (`yesoul` for the S3) while a rider uses it — between rides the bike stays free for other apps; needs a build with `--features bike` near the bike, BlueZ and libdbus — see [devices](docs/devices.md#yesoul-s3-on-the-server) |
 | `OPENRADLR_ANALYTICS_DOMAIN` / `_SCRIPT` | – | Opt-in Plausible analytics for the client: your site name, and the script URL if you self-host Plausible (off when the domain is empty) |
 | `OPENRADLR_STUDIO` | `true` | Host the spin studio (group classes) next to the routes |
 | `OPENRADLR_EVENTS` | `default` | Scheduled events: `default`, `off` or the path of an events file ([events](docs/events.md)) |

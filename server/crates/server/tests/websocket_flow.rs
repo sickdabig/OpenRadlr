@@ -184,6 +184,28 @@ async fn http_get(addr: SocketAddr, path: &str) -> (u16, String) {
     (status, body)
 }
 
+async fn http_post(addr: SocketAddr, path: &str, body: &str) -> u16 {
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    response[9..12].parse().unwrap()
+}
+
+/// The browser posts its crashes here (`errorReport.js`); the server logs
+/// them to its console and answers without content.
+#[tokio::test]
+async fn a_client_error_report_is_accepted_and_garbage_is_refused() {
+    let addr = start_server(0).await;
+    let report = r#"{"message":"Cannot access 'X' before initialization","source":"http://host/js/main.js","line":679,"column":57,"stack":"at savedWorkouts (main.js:679)"}"#;
+    assert_eq!(http_post(addr, "/api/client-error", report).await, 204);
+    assert_eq!(http_post(addr, "/api/client-error", "not json").await, 400);
+}
+
 async fn hello(socket: &mut Socket) {
     send(socket, r#"{"type":"hello","protocol_version":2}"#).await;
     expect_type(socket, "welcome").await;

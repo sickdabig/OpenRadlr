@@ -49,6 +49,7 @@ Workout riders are exempt.
 | `telemetry` | `power`, `cadence`? | about 4 Hz |
 | `input` | `action`: `lane_left` \| `lane_right` | on key or button press |
 | `start_race` | `laps` (1–`OPENRADLR_MAX_RACE_LAPS`) | any rider on a route, when no race is running there |
+| `start_class` | `class_id` (a class of the studio catalog, see `GET /api/studio`) | any rider in the spin studio: starts that class in their room now, without the 30-minute timetable or the lobby. The room rides it at once (`elapsed_s` begins at 0), the room's board scores reset, and when the class ends the room returns to the rolling timetable. An unknown id is refused with `class_unknown` |
 | `join_race` / `leave_race` | – | enter or leave the race whose countdown runs |
 | `join_event` | `event_id` | enter an event whose lobby is open (a running group ride too) |
 | `leave_event` | – | withdraw from the event |
@@ -71,7 +72,7 @@ Workout riders are exempt.
 | `welcome` | `protocol_version`, `server_name`, `server_version`, `auth_mode`, `route_id`, `grace_s` (how long a dropped rider is kept) |
 | `joined` | `rider_id`, `resume_token` (send it back in `join` after a dropped connection), `physics` (`mass_kg` rider plus bike, `cda_m2`, `crr`, `air_density`: what the server rides you with on a solo bike) |
 | `state` | `tick`, `riders[]` (the riders around you), `race` (your route's, see below), `route_riders` (`humans`, `bots`: everyone on your route), `event`? (your route's scheduled event, see below), `vehicle`? (your own vehicle, see below) — about 4 Hz |
-| `studio_state` | spin studio only, for the rider's room: `tick`, `room` (0-based), `rooms`, `class` (`id`, `name`, `starts_at_s` Unix time, `elapsed_s` — negative in the lobby), `riders[]` — about 4 Hz |
+| `studio_state` | spin studio only, for the rider's room: `tick`, `room` (0-based), `rooms`, `class` (`id`, `name`, `starts_at_s` Unix time, `elapsed_s` — negative in the lobby; for a class started on demand with `start_class` it is the moment the class began and `elapsed_s` starts at 0, no lobby), `riders[]` — about 4 Hz |
 | `resistance` | `grade_percent` — when the grade under the rider changes |
 | `event` | `event` with a `kind` (see below) |
 | `afk_warning` | `leave_in_s` (the answer window), `can_stay` (false on the final warning) — see the paragraph on timeouts above |
@@ -145,7 +146,10 @@ A home server can stand next to the bike it serves: with
 `OPENRADLR_BIKE=yesoul` (and the `bike` cargo feature) the **server** connects
 to the Yesoul S3 over its own Bluetooth adapter and streams the ride to one
 client; see [ADR 0020](adr/0020-server-side-ble.md) and
-[devices](devices.md#yesoul-s3-on-the-server) for the bike side.
+[devices](devices.md#yesoul-s3-on-the-server) for the bike side. The bike is
+only borrowed: the server looks for it and connects when a rider claims it
+with `use_bike`, and hangs up when the claim ends — between claims the bike
+is not connected, so other apps can pair with it.
 
 A joined connection asks with `use_bike`; the first one wins and is the
 claimant for as long as it lives, a second gets `bike_busy`
@@ -187,7 +191,7 @@ server turned the simulated trainer or phone paddles off), `chat_rate_limited`,
 `unknown_vehicle` (no vehicle has this code), `vehicle_full`, `vehicle_elsewhere` (the code
 belongs to another world; `message` is `route:<id>` to rejoin with), `not_captain`, `in_event` (seated riders can't join events or races and the other way round),
 `invalid_vehicle` (unsupported kind or seat count), `vehicle_rate_limited` (`create_vehicle` and `board_vehicle` share a slow per-connection limit: 3 at once, then one every 2 s), `already_aboard`, `in_vehicle` (joining an event while seated),
-`in_workout` (a riding message from a workout rider), `not_in_workout` (`workout` from a rider who did not join as one), `unknown_exercise`,
+`in_workout` (a riding message from a workout rider), `not_in_workout` (`workout` from a rider who did not join as one), `unknown_exercise`, `class_unknown` (no studio class has this id),
 `bike_unavailable` (no bike on this server, or built without the feature), `bike_busy` (another rider is on the bike),
 `afk_timeout` (no answer to an `afk_warning`; connection closed, rider removed without grace), `rate_limited` (connection closed), `handshake_timeout`, `idle_timeout`.
 
@@ -234,6 +238,7 @@ when `OPENRADLR_ALLOWED_ORIGINS` is set and the page's origin isn't listed, and
 | `GET /api/route?id=…` | a route file (see [routes](routes.md)); the default route without `id`, 404 for unknown ids |
 | `GET /api/map?id=…` | a shared map's road network file, unchanged (see [routes](routes.md#road-networks)); 404 for maps without one |
 | `GET /api/studio` | the spin studio: `slot_s` (1800), `lobby_s` (300), `seats_per_room`, `classes[]` (`id`, `name`, `description`, `duration_s`, `segments[]` with `duration_s`, `from`/`to` as a fraction of FTP, `cadence` `[lo, hi]`, `cue`), `schedule[]` (the current slot and the next five: `class_id`, `name`, `starts_at_s`); 404 when the studio is closed |
+| `POST /api/client-error` | body: a crash report from the browser (`message`, optional `source`, `line`, `column`, `stack`); the server logs it to its console and answers 204. No rider identity travels with it, long fields are capped, and the client sends at most 10 reports per page load |
 | `GET /auth/strava` | starts "Connect with Strava" (redirect) |
 | `GET /auth/strava/callback` | Strava sends the rider back here; sets the `openradlr_session` cookie |
 | `POST /auth/logout` | forgets the session |
@@ -263,6 +268,7 @@ Shared vehicles (#55) added `create_vehicle`, `board_vehicle`, `leave_vehicle`,
 three vehicle game events and the vehicle error codes within version 2.
 Pausing (#89) added `pause`, `resume`, `riders[].parked` and `pause_rejected` within version 2.
 Workouts (#77) added `device: "workout"`, the `workout` message, `riders[].exercise` and the `in_workout`, `not_in_workout` and `unknown_exercise` errors within version 2.
+On-demand studio classes added the `start_class` message and the `class_unknown` error within version 2; rooms still answer with the same `studio_state`, and a room without a started class keeps its rolling timetable.
 Security hardening added the `vehicle_rate_limited` error within version 2.
 A privacy link (#12) added `privacy_url` to `/api/info` within version 2.
 Opt-in analytics (#12) added `analytics` to `/api/info` within version 2.

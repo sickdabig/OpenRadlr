@@ -519,11 +519,11 @@ export class Renderer {
   }
 }
 
-function uniforms(gl, program, names) {
+export function uniforms(gl, program, names) {
   return Object.fromEntries(names.map((name) => [name, gl.getUniformLocation(program, name)]));
 }
 
-function compile(gl, type, source) {
+export function compile(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
@@ -533,7 +533,7 @@ function compile(gl, type, source) {
 
 const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
-function link(gl, vertex, fragment, bindings = {}) {
+export function link(gl, vertex, fragment, bindings = {}) {
   const program = gl.createProgram();
   gl.attachShader(program, vertex);
   gl.attachShader(program, fragment);

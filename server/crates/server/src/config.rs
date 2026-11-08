@@ -101,7 +101,9 @@ pub struct Config {
     pub analytics: Option<Analytics>,
     /// The operator's privacy policy, linked from the start menu (`OPENRADLR_PRIVACY_URL`).
     pub privacy_url: Option<String>,
-    /// A bike the server itself connects to over Bluetooth (`OPENRADLR_BIKE`), if any.
+    /// A bike the server itself connects to over Bluetooth (`OPENRADLR_BIKE`),
+    /// if any. The link comes up only while a rider uses it, so the bike
+    /// stays free for other apps between rides.
     pub bike: Option<BikeKind>,
 }
 

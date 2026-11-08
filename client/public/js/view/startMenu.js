@@ -6,6 +6,7 @@
 
 import { PRESETS } from "../workout/presets.js";
 import { planDuration } from "../workout/plan.js";
+import { totalDuration } from "../ride/workout.js";
 import { distanceUnit, formatDistance, formatDistanceWithUnit, formatDuration, formatElevation } from "../util/format.js";
 import { t, tn } from "../i18n/i18n.js";
 
@@ -72,8 +73,10 @@ export function routesOf(info) {
   const studio = info.studio ? [{ ...info.studio, kind: "studio" }] : [];
   // The workout happens at a café of a real route, so it needs one.
   const workout = [{ id: "workout", kind: "workout", name: t("menu.workout") }];
-  if (Array.isArray(info.routes) && info.routes.length) return [...info.routes, ...studio, ...workout];
-  return info.route ? [{ ...info.route, players: info.players ?? 0 }, ...studio, ...workout] : studio;
+  // The structured workout rides the default route: the card is a library, not a place.
+  const training = [{ id: "training", kind: "training", name: t("menu.training") }];
+  if (Array.isArray(info.routes) && info.routes.length) return [...info.routes, ...studio, ...workout, ...training];
+  return info.route ? [{ ...info.route, players: info.players ?? 0 }, ...studio, ...workout, ...training] : studio;
 }
 
 /** The route whose world the workout joins: the server's default (first). */
@@ -81,12 +84,21 @@ export function workoutRoute(info) {
   return routesOf(info).find((route) => route.kind === undefined)?.id ?? null;
 }
 
-/** "3 workouts · 4–12 min" */
+/** "3 workouts · 4–12 min" over café plans. */
 export function workoutTagline(presets) {
-  const minutes = presets.map((plan) => Math.round(planDuration(plan) / 60));
+  return tagline(presets.map((plan) => Math.round(planDuration(plan) / 60)));
+}
+
+/** The same line over the structured library, whose workouts know their segments. */
+export function libraryTagline(workouts) {
+  return tagline(workouts.map((workout) => Math.round(totalDuration(workout) / 60)));
+}
+
+/** "3 workouts · 4–12 min" */
+function tagline(minutes) {
   const low = Math.min(...minutes);
   const high = Math.max(...minutes);
-  return tn("menu.workouts", presets.length, { range: low === high ? low : `${low}–${high}` });
+  return tn("menu.workouts", minutes.length, { range: low === high ? low : `${low}–${high}` });
 }
 
 /** "HIIT 30/30 starts in 4:12" during the lobby, else what runs and what's next. */
@@ -107,10 +119,10 @@ export function routeStats(route) {
   return t("menu.routeStats", { distance: formatDistanceWithUnit(route.length_m ?? 0, 1), gain: formatElevation(route.elevation_gain_m ?? 0) });
 }
 
-/** The headline: the picked route's or class's name, a question for the workout, the events tab's title. */
+/** The headline: the picked route's or class's name, a question for either workout, the events tab's title. */
 export function stageHeadline(picked, activity = activityOf(picked)) {
   if (activity === "events") return t("events.title");
-  if (picked?.kind === "workout") return t("menu.stage.pickWorkout");
+  if (picked?.kind === "workout" || picked?.kind === "training") return t("menu.stage.pickWorkout");
   return picked?.name ?? t("menu.routes.title");
 }
 
@@ -118,6 +130,7 @@ export function stageHeadline(picked, activity = activityOf(picked)) {
 export function stageLede(picked, activity = activityOf(picked)) {
   if (activity === "events") return t("menu.stage.eventsLede");
   if (picked?.kind === "workout") return t("menu.workout.lede");
+  if (picked?.kind === "training") return t("menu.training.lede");
   if (picked?.kind === "studio") return t("menu.studio.description");
   return routeDescription(picked ?? {}) || t("menu.stage.rideLede");
 }
@@ -127,17 +140,18 @@ export function devicesVisible(picked) {
   return picked?.kind !== "workout";
 }
 
-/** The figures under the headline: "Rolling · 4.8 km · 64 m up · 2 riders", the class running, or the workouts. */
-export function stageStats(picked, nowS = Date.now() / 1000) {
+/** The figures under the headline: "Rolling · 4.8 km · 64 m up · 2 riders", the class running, the workouts or the library. */
+export function stageStats(picked, workouts = [], nowS = Date.now() / 1000) {
   if (!picked) return "";
   if (picked.kind === "studio") return `${studioTagline(picked, nowS)} · ${routeRiders(picked)}`;
   if (picked.kind === "workout") return workoutTagline(PRESETS);
+  if (picked.kind === "training") return libraryTagline(workouts);
   return `${routeCharacter(picked)} · ${routeStats(picked)} · ${routeRiders(picked)}`;
 }
 
-/** What a card is for: riding a route, a studio class or the workout. */
+/** What a card is for: riding a route, a studio class, the workout or the training library. */
 export function activityOf(route) {
-  return route?.kind === "studio" || route?.kind === "workout" ? route.kind : "ride";
+  return ["studio", "workout", "training"].includes(route?.kind) ? route.kind : "ride";
 }
 
 /** The cards on an activity's tab (none on the events tab: it lists events). */
@@ -151,7 +165,7 @@ export function pickForActivity(routes, activity, preferredId) {
   return cards.find((route) => route.id === preferredId) ?? cards[0] ?? null;
 }
 
-const activityLabels = () => ({ ride: t("menu.tab.ride"), studio: t("menu.tab.studio"), workout: t("menu.workout"), events: t("events.title") });
+const activityLabels = () => ({ ride: t("menu.tab.ride"), studio: t("menu.tab.studio"), workout: t("menu.workout"), training: t("menu.tab.training"), events: t("events.title") });
 
 /**
  * The tabs above the cards, only for what the server offers. Events count the
@@ -160,7 +174,7 @@ const activityLabels = () => ({ ride: t("menu.tab.ride"), studio: t("menu.tab.st
  * @param {{joinable: boolean, countdown: string}[]} events rows from `eventRows`
  */
 export function activityTabs(routes, events) {
-  const tabs = ["ride", "studio", "workout"]
+  const tabs = ["ride", "studio", "workout", "training"]
     .map((id) => ({ id, label: activityLabels()[id], count: routesFor(id, routes).length, live: false }))
     .filter((tab) => tab.count > 0);
   if (events.length) tabs.push({ id: "events", label: activityLabels().events, count: events.length, live: events.some((row) => row.joinable || row.countdown === t("events.running")) });
@@ -230,17 +244,18 @@ export function routeDescription(route) {
 export function routeCard(route) {
   const studio = route.kind === "studio";
   const workout = route.kind === "workout";
+  const training = route.kind === "training";
   return {
     id: route.id,
     name: route.name,
-    tag: studio ? t("menu.route.class") : workout ? t("menu.workout") : routeCharacter(route),
+    tag: studio ? t("menu.route.class") : workout || training ? (workout ? t("menu.workout") : t("menu.training")) : routeCharacter(route),
     // A route's description is under the headline once picked: the card stays compact.
     description: studio ? t("menu.studio.description") : workout ? t("menu.workout.tagline") : null,
     title: routeDescription(route),
-    stats: studio ? studioTagline(route) : workout ? workoutTagline(PRESETS) : routeStats(route),
-    riders: workout ? null : routeRiders(route),
+    stats: studio ? studioTagline(route) : workout ? workoutTagline(PRESETS) : training ? t("menu.training.tagline") : routeStats(route),
+    riders: workout || training ? null : routeRiders(route),
     active: (route.players ?? 0) > 0,
-    special: studio || workout,
+    special: studio || workout || training,
   };
 }
 
@@ -342,7 +357,7 @@ export function stravaLine(info, account) {
 export function joinAction({ selected, full, needsStrava, boardCode }) {
   if (full) return { kind: "full", label: t("menu.join.full"), disabled: true };
   if (needsStrava) return { kind: "strava", label: t("menu.join.needsStrava"), disabled: false };
-  if (boardCode && selected?.kind !== "workout") return { kind: "board", label: t("menu.join.board", { code: boardCode }), disabled: false };
-  if (selected?.kind === "workout") return { kind: "workout", label: t("menu.join.workout"), disabled: false };
+  if (boardCode && selected?.kind !== "workout" && selected?.kind !== "training") return { kind: "board", label: t("menu.join.board", { code: boardCode }), disabled: false };
+  if (selected?.kind === "workout" || selected?.kind === "training") return { kind: selected.kind, label: t("menu.join.workout"), disabled: false };
   return { kind: "ride", label: selected ? t("menu.join.route", { name: selected.name }) : t("menu.join"), disabled: false };
 }

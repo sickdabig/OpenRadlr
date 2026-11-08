@@ -361,11 +361,21 @@ pub enum StudioEvent {
     },
 }
 
+/// A class a room started on demand: which of the timetable's classes and
+/// when it started (the room's own clock, see [`Studio::start_class`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Practice {
+    class_index: usize,
+    starts_at_s: f64,
+}
+
 pub struct Studio {
     timetable: Timetable,
     config: StudioConfig,
     rng: Box<dyn RandomSource>,
     rooms: Vec<Room>,
+    /// One entry per room: the class the room started on demand, if any.
+    practices: Vec<Option<Practice>>,
     now_s: f64,
     slot: u64,
     next_id: RiderId,
@@ -381,6 +391,7 @@ impl Studio {
             config,
             rng,
             rooms: vec![Room::new()],
+            practices: vec![None],
             now_s,
             slot,
             next_id: 1,
@@ -396,6 +407,46 @@ impl Studio {
 
     pub fn clock(&self) -> Clock {
         self.timetable.at(self.now_s)
+    }
+
+    /// The clock a room rides: its practice class while one runs, the
+    /// timetable otherwise (also for a room out of range).
+    pub fn clock_of(&self, room: usize) -> Clock {
+        match self.practices.get(room).copied().flatten() {
+            Some(practice)
+                if self.now_s
+                    < practice.starts_at_s + f64::from(self.timetable.classes()[practice.class_index].duration_s()) =>
+            {
+                Clock {
+                    slot: self.slot,
+                    class_index: practice.class_index,
+                    starts_at_s: practice.starts_at_s,
+                    elapsed_s: self.now_s - practice.starts_at_s,
+                }
+            }
+            _ => self.clock(),
+        }
+    }
+
+    /// Starts a class in `room` right now: its clock is anchored at this
+    /// moment (no lobby) and the room's board starts fresh. The room rides it
+    /// until the class ends, then returns to the timetable. Returns `false`
+    /// for an unknown class or room.
+    pub fn start_class(&mut self, room: usize, class_id: &str) -> bool {
+        let Some(class_index) = self.timetable.classes().iter().position(|c| c.id == class_id) else {
+            return false;
+        };
+        let Some(practice) = self.practices.get_mut(room) else {
+            return false;
+        };
+        *practice = Some(Practice {
+            class_index,
+            starts_at_s: self.now_s,
+        });
+        for rider in self.rooms[room].seats.iter_mut().flatten() {
+            rider.reset_class();
+        }
+        true
     }
 
     pub fn rooms(&self) -> &[Room] {
@@ -437,6 +488,7 @@ impl Studio {
             Some(index) => index,
             None => {
                 self.rooms.push(Room::new());
+                self.practices.push(None);
                 self.rooms.len() - 1
             }
         };
@@ -520,25 +572,46 @@ impl Studio {
 
     pub fn tick(&mut self, dt: f64) {
         self.now_s += dt;
-        let clock = self.timetable.at(self.now_s);
-        if clock.slot != self.slot {
-            self.slot = clock.slot;
-            for room in &mut self.rooms {
+        let global = self.timetable.at(self.now_s);
+        let slot_rolled = global.slot != self.slot;
+        self.slot = global.slot;
+        let config = &self.config;
+        let rng = &mut self.rng;
+        for (room_index, room) in self.rooms.iter_mut().enumerate() {
+            // A practice class that is over: back to the timetable with a
+            // fresh board (the room rides the timetable's clock again).
+            let mut practice_ended = false;
+            let practice = match self.practices[room_index] {
+                Some(p)
+                    if self.now_s < p.starts_at_s + f64::from(self.timetable.classes()[p.class_index].duration_s()) =>
+                {
+                    Some(p)
+                }
+                Some(_) => {
+                    self.practices[room_index] = None;
+                    practice_ended = true;
+                    None
+                }
+                None => None,
+            };
+            let clock = practice.map_or(global, |p| Clock {
+                slot: global.slot,
+                class_index: p.class_index,
+                starts_at_s: p.starts_at_s,
+                elapsed_s: self.now_s - p.starts_at_s,
+            });
+            // The slot's end starts every room's class with a fresh board; a
+            // room riding a practice class keeps its scores until it ends.
+            if practice_ended || (slot_rolled && practice.is_none()) {
                 for rider in room.seats.iter_mut().flatten() {
                     rider.reset_class();
                 }
             }
-        }
-        let target = self.timetable.target(&clock);
-        let cadence_cue = self
-            .timetable
-            .class(&clock)
-            .target_at(clock.elapsed_s)
-            .and_then(|(index, _)| self.timetable.class(&clock).segments[index].cadence);
-
-        let config = &self.config;
-        let rng = &mut self.rng;
-        for room in &mut self.rooms {
+            let target = self.timetable.target(&clock);
+            let class = self.timetable.class(&clock);
+            let cadence_cue = class
+                .target_at(clock.elapsed_s)
+                .and_then(|(index, _)| class.segments[index].cadence);
             for rider in room.seats.iter_mut().flatten() {
                 match &mut rider.occupant {
                     Occupant::Human {
@@ -609,6 +682,7 @@ impl Studio {
             index -= 1;
             if self.rooms[index].human_count() == 0 {
                 self.rooms.remove(index);
+                self.practices.remove(index);
             }
         }
         let target = self.config.target_riders.min(SEATS_PER_ROOM);
@@ -874,5 +948,94 @@ mod tests {
     fn rider_physics_of_an_unknown_rider_is_none() {
         let studio = studio(0, SLOT_START);
         assert_eq!(studio.rider_physics(9_999), None);
+    }
+
+    #[test]
+    fn starting_a_class_anchors_the_rooms_clock_now() {
+        let mut studio = studio(2, SLOT_START);
+        assert!(studio.start_class(0, "climb-pyramid"));
+        let clock = studio.clock_of(0);
+        assert_eq!(studio.timetable().class(&clock).id, "climb-pyramid");
+        assert_eq!(clock.elapsed_s, 0.0, "a practice class starts at once, no lobby");
+        assert!((clock.starts_at_s - SLOT_START).abs() < 1e-9);
+        assert_eq!(
+            studio.timetable().class(&studio.clock()).id,
+            "tempo",
+            "the other rooms keep the timetable"
+        );
+    }
+
+    #[test]
+    fn the_practice_room_rides_its_class_while_the_timetable_is_in_the_lobby() {
+        let mut studio = studio(4, SLOT_START);
+        assert_eq!(studio.timetable().target(&studio.clock()), None, "the slot's lobby");
+        assert!(studio.start_class(0, "sweet-spot"));
+        // Past the 5-minute warm-up, "sweet-spot" holds 90 % FTP for 8 minutes.
+        run(&mut studio, 400.0, |_| {});
+        let room = &studio.rooms()[0];
+        assert!(
+            room.riders().all(|(_, r)| r.class_seconds > 0.0),
+            "the practice class is scored"
+        );
+        let share = room.riders().map(|(_, r)| r.power / r.ftp_watts).sum::<f64>() / room.riders().count() as f64;
+        assert!((0.85..=0.95).contains(&share), "bots chase 90 % FTP, average {share}");
+    }
+
+    #[test]
+    fn starting_a_class_resets_the_rooms_scores() {
+        let mut studio = studio(0, SLOT_START + 600.0);
+        let anna = studio.join_human("Anna", 70.0, 250.0);
+        run(&mut studio, 30.0, |s| {
+            s.set_telemetry(anna, 220.0, Some(90.0));
+        });
+        assert!(studio.rider(anna).unwrap().class_seconds > 20.0);
+        assert!(studio.start_class(0, "tempo"));
+        assert_eq!(studio.rider(anna).unwrap().class_seconds, 0.0);
+        assert_eq!(studio.rider(anna).unwrap().class_joules, 0.0);
+    }
+
+    #[test]
+    fn the_class_ends_and_the_room_returns_to_the_timetable() {
+        let mut studio = studio(2, SLOT_START);
+        let anna = studio.join_human("Anna", 70.0, 250.0);
+        assert!(studio.start_class(0, "hiit"));
+        run(&mut studio, f64::from(CLASS_S) + 10.0, |s| {
+            s.set_telemetry(anna, 200.0, Some(90.0));
+        });
+        let clock = studio.clock_of(0);
+        assert_eq!(clock.starts_at_s, SLOT_START + 300.0, "the timetable's clock again");
+        // The scores were reset when the practice ended; the timetable's class
+        // (which runs since SLOT_START + 300) scored the last 10 s only.
+        let seconds = studio.rider(anna).unwrap().class_seconds;
+        assert!(
+            seconds > 5.0 && seconds < 15.0,
+            "fresh board after the class, got {seconds}"
+        );
+    }
+
+    #[test]
+    fn a_slot_rollover_leaves_a_practicing_rooms_scores_alone() {
+        let mut studio = studio(0, SLOT_START + f64::from(SLOT_S) - 10.0);
+        let anna = studio.join_human("Anna", 70.0, 250.0);
+        assert!(studio.start_class(0, "tempo"));
+        run(&mut studio, 20.0, |s| {
+            s.set_telemetry(anna, 220.0, Some(90.0));
+        });
+        assert!(
+            (studio.rider(anna).unwrap().class_seconds - 20.0).abs() < 1.0,
+            "no reset at the slot's end"
+        );
+    }
+
+    #[test]
+    fn unknown_class_or_room_is_refused() {
+        let mut studio = studio(2, SLOT_START);
+        assert!(!studio.start_class(0, "nope"));
+        assert!(!studio.start_class(9, "tempo"));
+        assert_eq!(
+            studio.clock_of(0).class_index,
+            studio.clock().class_index,
+            "nothing changed"
+        );
     }
 }

@@ -7,6 +7,7 @@
 //! | `/api/route?id=…`  | A full route file (the default route without `id`)   |
 //! | `/api/map?id=…`    | A shared map's road network file, unchanged          |
 //! | `/api/studio`      | Spin studio classes and the upcoming timetable       |
+//! | `/api/client-error`| Browser crash reports, logged to the console         |
 //! | `/ws`              | WebSocket game protocol                              |
 //! | `/auth/*`, `/api/me`, `/api/strava/*` | Strava account and uploads (see [`crate::auth`]) |
 //! | `/*`               | Browser client (only if a static dir is set)         |
@@ -295,6 +296,7 @@ pub fn router(state: AppState, static_dir: Option<&Path>, headers: &[(header::He
         .route("/api/route", get(route))
         .route("/api/map", get(map))
         .route("/api/studio", get(studio))
+        .route("/api/client-error", post(client_error))
         .route("/ws", get(websocket))
         .route("/auth/strava", get(auth::login))
         .route("/auth/strava/callback", get(auth::callback))
@@ -405,6 +407,109 @@ mod metrics_tests {
         assert!(output.contains("openradlr_afk_events_total{event=\"timeout\"} 0\n"));
         assert!(!output.contains("name="));
         assert!(!output.contains("token"));
+    }
+}
+
+/// A crash report from the browser (`POST /api/client-error`): the client
+/// hooks `error` and `unhandledrejection` and sends what the browser gave it,
+/// so the server console sees the crashes its riders hit. No rider identity
+/// travels with it — only what the browser's own error objects carry.
+#[derive(Deserialize)]
+struct ClientError {
+    message: String,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    line: Option<u32>,
+    #[serde(default)]
+    column: Option<u32>,
+    #[serde(default)]
+    stack: Option<String>,
+}
+
+/// Caps a field so one report cannot flood the console.
+fn clamp(value: &str, max: usize) -> &str {
+    match value.char_indices().nth(max) {
+        Some((index, _)) => &value[..index],
+        None => value,
+    }
+}
+
+/// The console line for a client error report; pure, so tests can check it.
+fn client_error_line(report: &ClientError) -> String {
+    let place = match (&report.source, report.line, report.column) {
+        (Some(source), Some(line), Some(column)) => format!("{}:{line}:{column}", clamp(source, 200)),
+        (Some(source), Some(line), None) => format!("{}:{line}", clamp(source, 200)),
+        (Some(source), None, _) => clamp(source, 200).to_owned(),
+        (None, Some(line), _) => format!("line {line}"),
+        (None, None, _) => String::new(),
+    };
+    let where_ = if place.is_empty() {
+        String::new()
+    } else {
+        format!(" ({place})")
+    };
+    let mut line = format!("from the browser{where_}: {}", clamp(&report.message, 500));
+    if let Some(stack) = &report.stack {
+        line.push('\n');
+        line.push_str(clamp(stack, 4000));
+    }
+    line
+}
+
+async fn client_error(Json(report): Json<ClientError>) -> StatusCode {
+    tracing::error!("{}", client_error_line(&report));
+    StatusCode::NO_CONTENT
+}
+
+#[cfg(test)]
+mod client_error_tests {
+    use super::{client_error_line, ClientError};
+
+    fn report(message: &str) -> ClientError {
+        ClientError {
+            message: message.to_owned(),
+            source: None,
+            line: None,
+            column: None,
+            stack: None,
+        }
+    }
+
+    #[test]
+    fn the_console_line_names_the_place_and_the_message() {
+        let mut error = report("Cannot access 'X' before initialization");
+        error.source = Some("http://host/js/main.js".to_owned());
+        error.line = Some(679);
+        error.column = Some(57);
+        assert_eq!(
+            client_error_line(&error),
+            "from the browser (http://host/js/main.js:679:57): Cannot access 'X' before initialization"
+        );
+    }
+
+    #[test]
+    fn a_place_without_a_column_reads_cleanly() {
+        let mut error = report("boom");
+        error.source = Some("main.js".to_owned());
+        error.line = Some(679);
+        assert_eq!(client_error_line(&error), "from the browser (main.js:679): boom");
+    }
+
+    #[test]
+    fn the_stack_travels_and_long_fields_are_capped() {
+        let mut error = report(&"boom ".repeat(200));
+        error.stack = Some("at savedWorkouts (main.js:679)\n  ".repeat(400));
+        let line = client_error_line(&error);
+        assert!(line.starts_with("from the browser: "));
+        assert!(line.contains("at savedWorkouts"));
+        assert!(line.len() < 6000, "capped, got {}", line.len());
+        assert_eq!(line.matches("boom").count(), 100, "message capped at 500 chars");
+    }
+
+    #[test]
+    fn a_bare_message_still_makes_a_line() {
+        assert_eq!(client_error_line(&report("boom")), "from the browser: boom");
     }
 }
 

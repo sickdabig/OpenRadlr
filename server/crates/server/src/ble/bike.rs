@@ -31,6 +31,9 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 impl BikeHub {
     /// Starts the Bluetooth manager task. Must run inside a Tokio runtime.
+    /// The link connects only while a rider holds a claim (ADR 0020): it
+    /// waits for one, and hangs up when the claim ends, so the bike stays
+    /// free for other apps the rest of the time.
     pub fn start(kind: BikeKind) -> Arc<Self> {
         let hub = Arc::new(Self::new(kind.kind()));
         let worker = hub.clone();
@@ -47,14 +50,16 @@ impl BikeHub {
     }
 }
 
-/// Runs the link forever: scan, connect, stream, and back to scanning when
-/// the bike disappears. Returns only on a fatal setup error.
+/// Runs the link forever: wait for a claim, scan, connect, stream, and back
+/// to waiting when the bike disappears or the claim ends. Returns only on a
+/// fatal setup error.
 async fn run(hub: &BikeHub) -> Result<(), BoxError> {
     use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter};
 
     let manager = btleplug::platform::Manager::new().await?;
     let mut announced = false;
     loop {
+        hub.wait_demanded().await;
         for adapter in manager.adapters().await? {
             if let Err(error) = adapter.start_scan(ScanFilter::default()).await {
                 // The scan by design spans several loop cycles: BlueZ keeps its
@@ -94,6 +99,12 @@ async fn run(hub: &BikeHub) -> Result<(), BoxError> {
                         tokio::time::sleep(RECONNECT_PAUSE).await;
                     }
                 }
+                if !hub.demanded() {
+                    // The rider let go (ride ended, connection closed): hang up
+                    // so other apps can use the bike, and wait for the next claim.
+                    let _ = peripheral.disconnect().await;
+                    break;
+                }
             }
         }
     }
@@ -117,7 +128,8 @@ async fn named_step<T>(
         .map_err(|error| format!("{what}: {error}").into())
 }
 
-/// One connect–handshake–stream cycle; returns when the bike is lost.
+/// One connect–handshake–stream cycle; returns when the bike is lost or the
+/// claim ends.
 async fn session(hub: &BikeHub, peripheral: &btleplug::platform::Peripheral) -> Result<(), BoxError> {
     use btleplug::api::{Characteristic, Peripheral as _, WriteType};
     use futures_util::StreamExt;
@@ -149,6 +161,7 @@ async fn session(hub: &BikeHub, peripheral: &btleplug::platform::Peripheral) -> 
     let mut link = Link::new(now_s());
     hub.publish(Status::from_reading(Reading::zeroed()));
     let mut notifications = Box::pin(peripheral.notifications().await?);
+    let mut demand = hub.subscribe_demand();
     let mut tick = tokio::time::interval(POLL_INTERVAL);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     tracing::info!("bike handshaked, streaming readings");
@@ -170,6 +183,13 @@ async fn session(hub: &BikeHub, peripheral: &btleplug::platform::Peripheral) -> 
                 Some(yesoul::LinkEvent::Publish(reading)) => hub.publish(Status::from_reading(reading)),
                 Some(yesoul::LinkEvent::Stale) => return Err("no data from the bike for too long".into()),
                 None => {}
+            },
+            _ = demand.changed() => {
+                // The claim ended (ride ended, connection closed): the bike is
+                // wanted elsewhere again, so hang up.
+                if !*demand.borrow_and_update() {
+                    return Ok(());
+                }
             },
         }
     }

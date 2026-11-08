@@ -52,9 +52,9 @@ export class ServerBikeTrainer extends Emitter {
   async setTargetPower() {}
 
   /**
-   * Only ends this adapter's interest in the bike's readings: the server
-   * keeps the link (other clients may ride the bike) and the claim dies with
-   * the game connection anyway.
+   * Only ends this adapter's interest in the bike's readings: the claim dies
+   * with the game connection anyway, and with it the server hangs the link
+   * up, so the bike is free for other apps.
    */
   disconnect() {
     this.connected = false;

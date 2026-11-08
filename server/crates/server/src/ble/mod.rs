@@ -65,6 +65,12 @@ pub struct BikeHub {
     /// Keeps the latest status alive: a `watch::Sender` with no receiver
     /// drops what it is sent.
     _receiver: watch::Receiver<Status>,
+    /// True while a rider holds a claim: the Bluetooth link may then connect.
+    /// The adapter (feature `bike`) waits for this before it scans, and hangs
+    /// up when it falls back to false, so the bike stays free for other apps
+    /// until this app asks for it.
+    demand: watch::Sender<bool>,
+    _demand_receiver: watch::Receiver<bool>,
     /// The rider currently riding the bike, with a ticket number so a
     /// replaced claim of the same rider cannot release the newer one.
     claimed: Mutex<Option<(RiderId, u64)>>,
@@ -93,13 +99,36 @@ impl BikeHub {
     /// without the `bike` feature that still report a configured bike).
     pub fn new(kind: &'static str) -> Self {
         let (sender, receiver) = watch::channel(Status::disconnected());
+        let (demand, demand_receiver) = watch::channel(false);
         Self {
             kind,
             sender,
             _receiver: receiver,
+            demand,
+            _demand_receiver: demand_receiver,
             claimed: Mutex::new(None),
             claims: std::sync::atomic::AtomicU64::new(1),
         }
+    }
+
+    /// True while at least one rider holds a claim: the link may connect.
+    pub fn demanded(&self) -> bool {
+        *self.demand.borrow()
+    }
+
+    /// Resolves once the bike is demanded (returns at once when it already is).
+    pub async fn wait_demanded(&self) {
+        let mut demand = self.demand.subscribe();
+        while !*demand.borrow_and_update() {
+            if demand.changed().await.is_err() {
+                return;
+            }
+        }
+    }
+
+    /// A stream of the demand flag, for the adapter to watch while connected.
+    pub fn subscribe_demand(&self) -> watch::Receiver<bool> {
+        self.demand.subscribe()
     }
 
     /// The bike kind as clients see it in `/api/info`.
@@ -117,7 +146,10 @@ impl BikeHub {
         let _ = self.sender.send(status);
     }
 
-    /// Lets `rider_id` ride the bike, if nobody else does.
+    /// Lets `rider_id` ride the bike, if nobody else does. A successful
+    /// claim also demands the bike: the Bluetooth link connects while the
+    /// claim lives and hangs up when the claim ends, so the bike stays free
+    /// for other apps the rest of the time.
     pub fn claim(self: &Arc<Self>, rider_id: RiderId) -> Result<BikeClaim, ClaimError> {
         let ticket = self.claims.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut claimed = self.claimed.lock().expect("claim registry not poisoned");
@@ -126,6 +158,13 @@ impl BikeHub {
             _ => *claimed = Some((rider_id, ticket)),
         }
         drop(claimed);
+        let sent = self.demand.send(true);
+        eprintln!(
+            "DBG claim: send(true) -> {:?}",
+            sent.as_ref().map(|_| ()).err().map(|_| "Err").unwrap_or("Ok")
+        );
+        eprintln!("DBG claim: demanded after send = {}", self.demanded());
+        let _ = sent;
         Ok(BikeClaim {
             hub: self.clone(),
             rider_id,
@@ -138,6 +177,7 @@ impl BikeHub {
         let mut claimed = self.claimed.lock().expect("claim registry not poisoned");
         if *claimed == Some((rider_id, ticket)) {
             *claimed = None;
+            let _ = self.demand.send(false);
         }
     }
 }
@@ -166,10 +206,26 @@ mod tests {
     }
 
     #[test]
+    fn the_bike_is_demanded_only_while_a_claim_holds() {
+        let hub = hub();
+        assert!(!hub.demanded(), "an unclaimed bike is not demanded");
+        let claim = hub.claim(1).expect("claim");
+        assert!(hub.demanded(), "a claim demands the bike");
+        drop(claim);
+        assert!(!hub.demanded(), "the claim's end frees the bike");
+    }
+
+    #[test]
     fn the_same_rider_can_reclaim_after_a_reconnect() {
         let hub = hub();
-        assert!(hub.claim(7).is_ok());
-        assert!(hub.claim(7).is_ok());
+        let first = hub.claim(7).expect("first claim");
+        assert!(hub.demanded());
+        drop(first);
+        assert!(!hub.demanded());
+        let second = hub.claim(7).expect("the same rider claims again");
+        assert!(hub.demanded(), "the rider back from a reconnect demands again");
+        drop(second);
+        assert!(!hub.demanded(), "the second claim's end frees the bike too");
     }
 
     #[test]
