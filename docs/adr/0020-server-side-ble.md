@@ -25,6 +25,12 @@ implements — so telemetry, ride recording, AFK and races need no changes.
 One claim at a time: the readings belong to one rider, a second claimant gets
 `bike_busy`. The claim dies with the connection.
 
+The link itself is **claim-driven**: the server scans and connects only while
+a claim lives, and disconnects when the claim ends (`use_bike` starts the
+link, the ride's end stops it). A home server shares the bike with other
+apps — Zwift, the manufacturer's own — so OpenRadlr must not hold it in the
+background; between claims the bike is free to pair with anything else.
+
 ## Consequences
 
 - Any OpenRadlr client can ride a server-side bike, including browsers
@@ -40,3 +46,7 @@ One claim at a time: the readings belong to one rider, a second claimant gets
   device) is future work, possible over the same channel.
 - The client trusts the server's readings like it trusts any device: the
   server can't tell power from pedalling either way.
+- The bike is free between rides: another app can pair with it while no
+  OpenRadlr rider holds a claim. The first seconds of a claimed ride may be
+  `connected: false` while the link comes up — the client already reads that
+  as a quiet bike.

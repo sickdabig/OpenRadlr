@@ -146,7 +146,10 @@ A home server can stand next to the bike it serves: with
 `OPENRADLR_BIKE=yesoul` (and the `bike` cargo feature) the **server** connects
 to the Yesoul S3 over its own Bluetooth adapter and streams the ride to one
 client; see [ADR 0020](adr/0020-server-side-ble.md) and
-[devices](devices.md#yesoul-s3-on-the-server) for the bike side.
+[devices](devices.md#yesoul-s3-on-the-server) for the bike side. The bike is
+only borrowed: the server looks for it and connects when a rider claims it
+with `use_bike`, and hangs up when the claim ends — between claims the bike
+is not connected, so other apps can pair with it.
 
 A joined connection asks with `use_bike`; the first one wins and is the
 claimant for as long as it lives, a second gets `bike_busy`

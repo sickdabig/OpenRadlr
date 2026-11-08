@@ -36,6 +36,13 @@ joining claims it, a second rider is told it is busy, and whoever comes back
 after a dropped connection claims again. The choice is remembered per
 browser; the server keeps the bike connection across riders.
 
+**The bike is only borrowed.** The server reaches for the bike only while a
+rider holds a claim: the first `use_bike` after joining starts the Bluetooth
+link, and when the claim ends (the ride ends, the connection closes) the
+link hangs up again. Between claims the bike is not connected at all, so
+other apps — Zwift, the manufacturer's own app — can pair with it freely;
+OpenRadlr never holds the bike in the background.
+
 Linux needs `bluetoothd` (BlueZ) running and `libdbus`; without the `bike`
 feature the server starts fine and answers `use_bike` with
 `bike_unavailable` (see [ADR 0020](adr/0020-server-side-ble.md)).
@@ -84,6 +91,7 @@ Shift with <kbd>E</kbd>/<kbd>Q</kbd> or the on-screen buttons.
 
 ## Staying connected
 
-The server keeps its bike connection across riders and reconnects on its own;
-from the client's side a drop looks like the bike going quiet, and the rider
-who comes back claims it again (see [ADR 0020](adr/0020-server-side-ble.md)).
+The server keeps its bike connection across riders and reconnects on its own
+while a claim holds; from the client's side a drop looks like the bike going
+quiet, and the rider who comes back claims it again (see
+[ADR 0020](adr/0020-server-side-ble.md)).
