@@ -20,11 +20,11 @@ export default [
     },
   },
   {
-    files: ["test/**/*.js", "screenshot.mjs", "screenshotArgs.mjs", "eslint.config.js"],
+    files: ["test/**/*.js", "e2e/**/*.mjs", "e2e/**/*.js", "screenshot.mjs", "screenshotArgs.mjs", "eslint.config.js"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",
-      globals: globals.node,
+      globals: { ...globals.node, ...globals.browser },
     },
   },
   {

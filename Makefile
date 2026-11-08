@@ -57,6 +57,15 @@ test-server: ## Run the Rust tests (simulation, server, end-to-end)
 test-client: ## Run the browser client tests
 	$(NPM) test
 
+.PHONY: build-server
+build-server: ## Build the server binary (debug) for the headless browser tests
+	$(CARGO) build --bin openradlr-server
+
+.PHONY: test-e2e
+test-e2e: build-server client/node_modules ## Headless browser tests: the real app in Chromium against the real server (once: npx playwright install chromium)
+	$(NPM) exec -- playwright install chromium
+	$(NPM) run test:e2e
+
 .PHONY: lint
 lint: lint-server lint-client ## Check formatting and lints
 
@@ -82,7 +91,7 @@ fmt: ## Format the Rust code
 	$(CARGO) fmt --all
 
 .PHONY: check
-check: lint test ## Everything CI runs
+check: lint test test-e2e ## Everything CI runs
 
 .PHONY: routes
 routes: ## Regenerate the bundled map's road network and routes (tools/valley-map.mjs)

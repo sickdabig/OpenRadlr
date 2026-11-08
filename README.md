@@ -116,6 +116,7 @@ Run `make` to list everything. The most important ones:
 | --- | --- |
 | `make setup` | Create `.env` from `.env.example` (later runs add new settings) |
 | `make test` | All tests (Rust and JavaScript) |
+| `make test-e2e` | Headless browser tests: the real app in Chromium against the real server (once: `npx playwright install chromium`) |
 | `make lint` | rustfmt, clippy (`-D warnings`), ESLint |
 | `make check` | Everything CI runs |
 | `make dev` | Run the server locally with cargo on http://localhost:7777 |
